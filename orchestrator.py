@@ -120,13 +120,26 @@ def ollama_chat(provider, messages: list[dict]) -> tuple[str, dict]:
         "model": provider.model,
         "messages": messages,
         "stream": False,
+        # Thinking models (qwen3-vl, deepseek-r1, etc.) can burn most of their
+        # budget on chain-of-thought; 4096 leaves room for both think + answer.
         "options": {"temperature": 0.1, "num_predict": 4096},
     }
     with httpx.Client(timeout=300.0) as client:
         r = client.post(provider.url, json=payload)
         r.raise_for_status()
         data = r.json()
-    text = data.get("message", {}).get("content", "")
+    msg = data.get("message", {})
+    text = msg.get("content", "")
+    thinking = msg.get("thinking", "")
+    # Defensive: if a thinking model burned its whole budget on think and
+    # emitted empty content, surface that to Claude Code instead of silently
+    # returning blank — otherwise the UI looks like the model failed.
+    if not text and thinking:
+        log("thinking_only_response", thinking_chars=len(thinking), model=provider.model)
+        text = (
+            "[thinking-only response — model spent its token budget on chain-of-thought "
+            f"and emitted no answer. Last 240 chars of thinking: ...{thinking[-240:]}]"
+        )
     usage = {
         "input_tokens": data.get("prompt_eval_count", 0),
         "output_tokens": data.get("eval_count", 0),
