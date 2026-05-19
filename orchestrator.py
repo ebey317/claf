@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -201,14 +202,88 @@ def anthropic_direct_chat(provider, body: dict) -> tuple[str, dict]:
     return text, usage
 
 
-def wrap_anthropic_response(model_id: str, assistant_text: str, usage: dict) -> dict:
+# Directive parsing: small local models emit text like "READ:/path/to/file" or
+# "RUN:cmd" instead of native Anthropic tool_use JSON. This layer translates
+# those text directives back into tool_use content blocks so Claude Code's
+# native dispatcher fires the actual tool. Closes the Mode 3 functional loop.
+_DIRECTIVE_PATTERNS: list[tuple[re.Pattern, str, str]] = [
+    # (regex, claude-code tool name, key in tool input dict)
+    (re.compile(r"^\s*READ\s*:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE), "Read", "file_path"),
+    (re.compile(r"^\s*RUN\s*:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE), "Bash", "command"),
+    (re.compile(r"^\s*BASH\s*:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE), "Bash", "command"),
+]
+
+
+def _find_tool(available: list, name: str) -> dict | None:
+    target = name.lower()
+    for t in available or []:
+        if isinstance(t, dict) and str(t.get("name", "")).lower() == target:
+            return t
+    return None
+
+
+def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[dict], bool]:
+    """Scan model text for directive lines (READ:/RUN:/BASH:) and produce
+    Anthropic content blocks. If a directive matches a tool the client
+    declared in its request, emit it as a tool_use block. Otherwise leave
+    the text unchanged.
+
+    Returns (content_blocks, used_tool_use).
+    """
+    if not text:
+        return [{"type": "text", "text": ""}], False
+
+    found: list[tuple[int, int, dict]] = []
+    for pattern, tool_name, input_key in _DIRECTIVE_PATTERNS:
+        tool = _find_tool(available_tools, tool_name)
+        if not tool:
+            continue
+        for m in pattern.finditer(text):
+            value = m.group(1).strip()
+            if not value:
+                continue
+            found.append(
+                (
+                    m.start(),
+                    m.end(),
+                    {
+                        "type": "tool_use",
+                        "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                        "name": tool["name"],
+                        "input": {input_key: value},
+                    },
+                )
+            )
+
+    if not found:
+        return [{"type": "text", "text": text}], False
+
+    found.sort(key=lambda t: t[0])
+    keep_parts: list[str] = []
+    cursor = 0
+    for start, end, _ in found:
+        if start > cursor:
+            keep_parts.append(text[cursor:start])
+        cursor = end
+    if cursor < len(text):
+        keep_parts.append(text[cursor:])
+    remaining = "".join(keep_parts).strip()
+
+    blocks: list[dict] = []
+    if remaining:
+        blocks.append({"type": "text", "text": remaining})
+    blocks.extend(block for _, _, block in found)
+    return blocks, True
+
+
+def wrap_anthropic_response(model_id: str, content_blocks: list, usage: dict, tool_use: bool) -> dict:
     return {
         "id": f"msg_claf_{uuid.uuid4().hex[:24]}",
         "type": "message",
         "role": "assistant",
         "model": model_id,
-        "content": [{"type": "text", "text": assistant_text}],
-        "stop_reason": "end_turn",
+        "content": content_blocks,
+        "stop_reason": "tool_use" if tool_use else "end_turn",
         "stop_sequence": None,
         "usage": usage,
     }
@@ -361,12 +436,15 @@ async def messages(request: Request):
             },
         )
 
-    response = wrap_anthropic_response(requested_model, assistant_text, usage)
+    content_blocks, tool_use = parse_directives_to_content(assistant_text, body.get("tools", []) or [])
+    response = wrap_anthropic_response(requested_model, content_blocks, usage, tool_use)
     log(
         "response_out",
         tier=provider.tier,
         name=provider.name,
         out_chars=len(assistant_text),
+        tool_use=tool_use,
+        tool_use_count=sum(1 for b in content_blocks if b.get("type") == "tool_use"),
         input_tokens=usage["input_tokens"],
         output_tokens=usage["output_tokens"],
     )
