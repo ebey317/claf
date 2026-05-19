@@ -51,7 +51,7 @@ _LOCAL = next(p for p in PROVIDERS if p.tier == 0)
 LOCAL_MODEL = _LOCAL.model
 OLLAMA_URL = _LOCAL.url
 
-app = FastAPI(title="CLAF orchestrator", version="0.3.0")
+app = FastAPI(title="CLAF orchestrator", version="0.4.0")
 
 
 def log(event: str, **fields) -> None:
@@ -203,7 +203,7 @@ def wrap_anthropic_response(model_id: str, assistant_text: str, usage: dict) -> 
 
 @app.get("/")
 def root():
-    return {"name": "claf-orchestrator", "version": "0.3.0", "local_model": LOCAL_MODEL, "mode": MODE}
+    return {"name": "claf-orchestrator", "version": "0.4.0", "local_model": LOCAL_MODEL, "mode": MODE}
 
 
 @app.get("/healthz")
@@ -265,6 +265,22 @@ async def messages(request: Request):
     requested_model = body.get("model", "claude-sonnet-4-6")
     provider = select_provider(body)
     log("route_decision", mode=MODE, picked_tier=provider.tier, picked_name=provider.name, picked_model=provider.model)
+
+    # Off-grid guardrail: even though claf_config prunes cloud tiers from
+    # PROVIDERS in off_grid mode, refuse to dispatch a non-local kind here
+    # as a defense-in-depth check. If this trips, something is misconfigured
+    # — the request was about to leak off-box. Refuse loudly.
+    if MODE == "off_grid" and provider.kind != "ollama":
+        log("off_grid_lock", attempted=provider.name, kind=provider.kind)
+        return JSONResponse(
+            status_code=423,  # Locked
+            content={
+                "error": {
+                    "type": "off_grid_lock",
+                    "message": f"off_grid mode refuses non-local provider {provider.name}",
+                }
+            },
+        )
 
     try:
         if provider.kind == "ollama":
