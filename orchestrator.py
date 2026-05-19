@@ -233,6 +233,50 @@ def healthz():
     return {"config": cfg, "ollama_reachable": ollama_reachable}
 
 
+@app.get("/stats")
+def stats():
+    """Tally token usage from the log. Cloud tokens should stay 0 in off_grid mode —
+    that's the line the operator wants to keep watching."""
+    by_tier: dict[str, dict] = {}
+    if LOG_FILE.exists():
+        with LOG_FILE.open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if e.get("event") != "response_out":
+                    continue
+                tier = str(e.get("tier", "?"))
+                name = e.get("name", "?")
+                slot = by_tier.setdefault(tier, {"name": name, "calls": 0, "input_tokens": 0, "output_tokens": 0})
+                slot["calls"] += 1
+                slot["input_tokens"] += int(e.get("input_tokens") or 0)
+                slot["output_tokens"] += int(e.get("output_tokens") or 0)
+
+    cloud_in = sum(s["input_tokens"] for t, s in by_tier.items() if t != "0")
+    cloud_out = sum(s["output_tokens"] for t, s in by_tier.items() if t != "0")
+    local_in = by_tier.get("0", {}).get("input_tokens", 0)
+    local_out = by_tier.get("0", {}).get("output_tokens", 0)
+    total_calls = sum(s["calls"] for s in by_tier.values())
+
+    return {
+        "mode": MODE,
+        "by_tier": by_tier,
+        "totals": {
+            "total_calls": total_calls,
+            "local_input_tokens": local_in,
+            "local_output_tokens": local_out,
+            "cloud_input_tokens": cloud_in,
+            "cloud_output_tokens": cloud_out,
+        },
+        "happy_signal": cloud_in == 0 and cloud_out == 0,
+    }
+
+
 @app.get("/v1/models")
 def list_models():
     """Claude Code probes this on startup. Return a single canonical entry."""
