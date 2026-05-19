@@ -83,13 +83,25 @@ The last call should return an Anthropic-shaped JSON envelope with the local mod
 - **Vision.** Image blocks are elided to a placeholder. Wire base64 forwarding when text smoke is green.
 - **Bigger local brain option.** Default tier-0 is `qwen3-vl:2b` because of the "smallest viable" sizing exercise. For the off-grid scenario the operator actually wants the biggest local model that fits the hardware (~30-100B). Swap `CLAF_LOCAL_MODEL` env var.
 
-## Logs
+## Logs + live watch
 
 Append-only JSONL at `~/projects/claf/orchestrator.log`.
 
+For a readable live view (one line per event — request in, route decision, response out, lock/error events):
+
 ```bash
-tail -f ~/projects/claf/orchestrator.log | jq -r '"[\(.ts)] \(.event)  tier=\(.picked_tier // .tier // "-")  name=\(.picked_name // .name // "-")  \(.error // "")"'
+python3 ~/projects/claf/watch.py
 ```
+
+Output shape (sample lines):
+```
+[12:33:01]  →  REQ          model=claude-sonnet-4-6   msgs=3   sys=y
+[12:33:01]    ▶ local   ROUTE   local-ollama       model=qwen3-vl:2b           mode=off_grid
+[12:33:14]  ←  OUT          tier=0   chars=187      tokens=412/96
+[12:33:14]  ⚠  THINK-ONLY   model=qwen3-vl:2b   thinking_chars=820  (model burned budget on chain-of-thought, no answer text)
+```
+
+So you can SEE the orchestra running — which tier got selected, whether the local model spent its budget thinking, when an off_grid_lock fires.
 
 ## Why off-grid is the default
 
