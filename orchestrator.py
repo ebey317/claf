@@ -40,6 +40,15 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+_ENV_FILE = Path(__file__).parent / ".env"
+if _ENV_FILE.exists():
+    for _line in _ENV_FILE.read_text().splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _v = _line.split("=", 1)
+        os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+
 from claf_config import MODE, PROVIDERS, describe, select_provider
 
 
@@ -174,13 +183,19 @@ def anthropic_to_ollama_messages(claude_messages: list) -> list[dict]:
 
 
 def ollama_chat(provider, messages: list[dict]) -> tuple[str, dict]:
+    # Context window is configurable per CLAF_OLLAMA_CTX (default 2048).
+    # Vision models have a large compute-graph buffer that scales with ctx —
+    # 4096 needed ~12.5 GiB which busts 15 GiB boxes; 2048 fits comfortably.
+    num_ctx = int(os.environ.get("CLAF_OLLAMA_CTX", "2048"))
     payload = {
         "model": provider.model,
         "messages": messages,
         "stream": False,
-        # Thinking models (qwen3-vl, deepseek-r1, etc.) can burn most of their
-        # budget on chain-of-thought; 4096 leaves room for both think + answer.
-        "options": {"temperature": 0.1, "num_predict": 4096},
+        "options": {
+            "temperature": 0.1,
+            "num_predict": min(num_ctx, 4096),
+            "num_ctx": num_ctx,
+        },
     }
     with httpx.Client(timeout=300.0) as client:
         r = client.post(provider.url, json=payload)
@@ -548,17 +563,30 @@ def stats():
 
 @app.get("/v1/models")
 def list_models():
-    """Claude Code probes this on startup. Return a single canonical entry."""
-    return {
-        "data": [
-            {
-                "id": LOCAL_MODEL,
-                "type": "model",
-                "display_name": f"local:{LOCAL_MODEL}",
-                "created_at": "2026-05-19T00:00:00Z",
-            }
-        ]
-    }
+    """Claude Code probes this on startup to validate the model it wants to use
+    actually exists. CLAF is a transparent proxy — whatever model ID Claude
+    Code requests, we serve via local Ollama (or escalate per the tier ladder).
+    Advertise the common Claude model IDs so Claude Code's startup validation
+    passes, plus the actual local model name for direct callers."""
+    common_claude_ids = [
+        "claude-opus-4-7", "claude-opus-4-7[1m]",
+        "claude-opus-4-6", "claude-opus-4-5",
+        "claude-sonnet-4-7", "claude-sonnet-4-6", "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+    ]
+    seen: set[str] = set()
+    data: list[dict] = []
+    for mid in [LOCAL_MODEL, *common_claude_ids]:
+        if mid in seen:
+            continue
+        seen.add(mid)
+        data.append({
+            "id": mid,
+            "type": "model",
+            "display_name": f"claf:{mid} (→ {LOCAL_MODEL})" if mid != LOCAL_MODEL else f"local:{LOCAL_MODEL}",
+            "created_at": "2026-05-19T00:00:00Z",
+        })
+    return {"data": data}
 
 
 @app.post("/v1/messages")
