@@ -15,10 +15,10 @@
 
 set -euo pipefail
 
-PROXY_URL="${CLAF_PROXY_URL:-http://localhost:8000/v1}"
+PROXY_URL="${CLAF_PROXY_URL:-http://localhost:8000}"
 
-if ! curl -fsS "${PROXY_URL%/v1}/" >/dev/null 2>&1; then
-    echo "ERROR: orchestrator not responding at ${PROXY_URL%/v1}/"
+if ! curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
+    echo "ERROR: orchestrator not responding at ${PROXY_URL}/"
     echo "Start it first:  python3 ~/projects/claf/orchestrator.py"
     exit 1
 fi

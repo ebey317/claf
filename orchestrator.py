@@ -49,17 +49,43 @@ if _ENV_FILE.exists():
         _k, _v = _line.split("=", 1)
         os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
-from claf_config import MODE, PROVIDERS, describe, select_provider
+# Bootstrap: pull cloud-peer API keys from the operator's keystore at
+# ~/.master_ai_keys (JSON) and project them into env vars that claf_config
+# reads. This keeps keys out of .env (and out of git) while still making
+# every cloud peer reachable in hybrid/cloud modes. Local-only mode never
+# touches this — claf_config doesn't read the env keys when MODE=local.
+_KEYS_FILE = Path.home() / ".master_ai_keys"
+_KEY_MAP = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+    "fireworks": "FIREWORKS_API_KEY",
+}
+if _KEYS_FILE.exists():
+    try:
+        _ks = json.loads(_KEYS_FILE.read_text())
+        for _src, _env in _KEY_MAP.items():
+            _v = (_ks.get(_src) or "").strip()
+            if _v:
+                os.environ.setdefault(_env, _v)
+    except Exception:
+        pass  # if keystore is malformed, fall back to whatever env already has
+
+from claf_config import MODE, PROVIDERS, describe, select_provider, _is_hard_task
 
 
 PORT = int(os.environ.get("CLAF_PORT", "8000"))
 LOG_FILE = Path(os.environ.get("CLAF_LOG_FILE", str(Path.home() / "projects/claf/orchestrator.log")))
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-# Convenience: the tier-0 (local) provider is the default target in v0.
-_LOCAL = next(p for p in PROVIDERS if p.tier == 0)
-LOCAL_MODEL = _LOCAL.model
-OLLAMA_URL = _LOCAL.url
+# Convenience: the local provider is the default target when present. In
+# `cloud` mode there is no local provider — leave these unset/None and let
+# vision-routing and /v1/models handle the absence gracefully.
+_LOCAL = next((p for p in PROVIDERS if p.pool == "local"), None)
+LOCAL_MODEL = _LOCAL.model if _LOCAL else None
+OLLAMA_URL = _LOCAL.url if _LOCAL else None
 
 # Dual-local routing: pick a different Ollama model when the request contains
 # image content. Default workhorse handles text/tool/code; vision model gets
@@ -505,15 +531,18 @@ def root():
 
 @app.get("/healthz")
 def healthz():
-    """Self-check without firing an inference. Validates config; pings Ollama."""
+    """Self-check without firing an inference. Validates config; pings Ollama
+    only when the active mode includes a local provider."""
     cfg = describe()
-    ollama_reachable = False
-    try:
-        with httpx.Client(timeout=3.0) as c:
-            r = c.get(OLLAMA_URL.replace("/api/chat", "/api/tags"))
-            ollama_reachable = r.status_code == 200
-    except Exception:
-        pass
+    ollama_reachable = None  # None = not applicable in this mode
+    if OLLAMA_URL:
+        ollama_reachable = False
+        try:
+            with httpx.Client(timeout=3.0) as c:
+                r = c.get(OLLAMA_URL.replace("/api/chat", "/api/tags"))
+                ollama_reachable = r.status_code == 200
+        except Exception:
+            pass
     return {"config": cfg, "ollama_reachable": ollama_reachable}
 
 
@@ -576,14 +605,19 @@ def list_models():
     ]
     seen: set[str] = set()
     data: list[dict] = []
-    for mid in [LOCAL_MODEL, *common_claude_ids]:
+    # In cloud mode LOCAL_MODEL is None; only advertise the common Claude IDs.
+    candidate_ids = [m for m in [LOCAL_MODEL, *common_claude_ids] if m]
+    routed_label = LOCAL_MODEL if LOCAL_MODEL else f"cloud-pool:{MODE}"
+    for mid in candidate_ids:
         if mid in seen:
             continue
         seen.add(mid)
         data.append({
             "id": mid,
             "type": "model",
-            "display_name": f"claf:{mid} (→ {LOCAL_MODEL})" if mid != LOCAL_MODEL else f"local:{LOCAL_MODEL}",
+            "display_name": (
+                f"local:{mid}" if mid == LOCAL_MODEL else f"claf:{mid} (→ {routed_label})"
+            ),
             "created_at": "2026-05-19T00:00:00Z",
         })
     return {"data": data}
@@ -617,21 +651,83 @@ async def messages(request: Request):
         messages.insert(0, {"role": "system", "content": system_text})
 
     requested_model = body.get("model", "claude-sonnet-4-6")
-    provider = select_provider(body)
-    log("route_decision", mode=MODE, picked_tier=provider.tier, picked_name=provider.name, picked_model=provider.model)
 
-    # Off-grid guardrail: even though claf_config prunes cloud tiers from
-    # PROVIDERS in off_grid mode, refuse to dispatch a non-local kind here
-    # as a defense-in-depth check. If this trips, something is misconfigured
-    # — the request was about to leak off-box. Refuse loudly.
-    if MODE == "off_grid" and provider.kind != "ollama":
-        log("off_grid_lock", attempted=provider.name, kind=provider.kind)
+    # LOCAL mode + hard-task signal = explicit refusal. The operator picked
+    # local for a reason; don't silently serve a request that needed cloud.
+    if MODE == "local" and _is_hard_task(body):
+        log("mode_lock", mode=MODE, reason="hard_task_in_local_mode")
         return JSONResponse(
-            status_code=423,  # Locked
+            status_code=423,
             content={
                 "error": {
-                    "type": "off_grid_lock",
-                    "message": f"off_grid mode refuses non-local provider {provider.name}",
+                    "type": "mode_lock",
+                    "message": "local mode cannot satisfy hard-task escalation (set CLAF_MODE=hybrid or cloud)",
+                }
+            },
+        )
+
+    provider = select_provider(body)
+
+    # Routing-proof fields (verification-spec layer 3): make the reason for
+    # this routing decision auditable in one log line. A consumer never needs
+    # to read CLAF code to understand why their request went where it went.
+    hard = _is_hard_task(body)
+    if MODE == "local":
+        route_reason = "local_mode_only"
+        local_attempted = True
+        cloud_escalated = False
+    elif MODE == "cloud":
+        route_reason = "cloud_mode_bypass_local"
+        local_attempted = False
+        cloud_escalated = True
+    else:  # hybrid
+        if hard:
+            route_reason = "hybrid_hard_task_escalated"
+            local_attempted = True   # local would have been chosen for routine
+            cloud_escalated = True
+        else:
+            route_reason = "hybrid_routine_local"
+            local_attempted = True
+            cloud_escalated = False
+
+    log(
+        "route_decision",
+        mode=MODE,
+        provider=provider.name,
+        pool=provider.pool,
+        model=provider.model,
+        route_reason=route_reason,
+        local_attempted=local_attempted,
+        cloud_escalated=cloud_escalated,
+        # legacy fields kept for back-compat with /stats and existing scrapers:
+        picked_tier=provider.tier,
+        picked_name=provider.name,
+        picked_model=provider.model,
+    )
+
+    # Mode lock — defense-in-depth. claf_config already prunes PROVIDERS by
+    # mode at import time, but assert here that the chosen provider matches
+    # mode constraints. If this trips, something is misconfigured and the
+    # request was about to take a path the mode forbids. Refuse loudly (423).
+    if MODE == "local" and provider.kind != "ollama":
+        log("mode_lock", mode=MODE, attempted=provider.name, kind=provider.kind)
+        return JSONResponse(
+            status_code=423,
+            content={
+                "error": {
+                    "type": "mode_lock",
+                    "message": f"local mode refuses non-local provider {provider.name}",
+                }
+            },
+        )
+    if MODE == "cloud" and provider.kind == "ollama":
+        log("mode_lock", mode=MODE, attempted=provider.name, kind=provider.kind)
+        return JSONResponse(
+            status_code=423,
+            content={
+                "error": {
+                    "type": "mode_lock",
+                    "message": f"cloud mode bypasses local provider {provider.name}",
                 }
             },
         )
@@ -686,7 +782,10 @@ async def messages(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    print(f"CLAF orchestrator → local model {LOCAL_MODEL} at {OLLAMA_URL}")
-    print(f"Listening on http://127.0.0.1:{PORT}  (set ANTHROPIC_BASE_URL=http://localhost:{PORT}/v1)")
+    if LOCAL_MODEL:
+        print(f"CLAF orchestrator [SENSEI mode={MODE}] → local model {LOCAL_MODEL} at {OLLAMA_URL}")
+    else:
+        print(f"CLAF orchestrator [SENSEI mode={MODE}] → local provider bypassed (cloud-only)")
+    print(f"Listening on http://127.0.0.1:{PORT}  (set ANTHROPIC_BASE_URL=http://localhost:{PORT})")
     print(f"Log: {LOG_FILE}")
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")
