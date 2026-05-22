@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "secretary.autonomous.v1/action_result",
+  "title": "Secretary Uniform Result Envelope",
+  "description": "All 8 MCP tools return this shape",
+  "type": "object",
+  "required": ["ok"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "result": { "description": "Tool-specific result payload" },
+    "reason": {
+      "type": "string",
+      "description": "Present on ok=false, machine-readable failure reason"
+    },
+    "expected": { "description": "What was expected (for debugging)" },
+    "observed": { "description": "What was observed (for debugging)" },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "File paths or URLs produced"
+    },
+    "task_id": { "type": "string" },
+    "step_id": { "type": "string" }
+  }
+}

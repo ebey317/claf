@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "secretary.autonomous.v1/capability_manifest",
+  "title": "Secretary Capability Manifest",
+  "description": "Declares the secretary.autonomous.v1 capability contract",
+  "type": "object",
+  "required": ["capability_id", "version", "mode_policy", "tools_allowed", "approval_gates"],
+  "properties": {
+    "capability_id": { "type": "string", "const": "secretary.autonomous.v1" },
+    "version": { "type": "string" },
+    "mode_policy": {
+      "type": "string",
+      "enum": ["local", "hybrid", "cloud"],
+      "description": "CLAF routing mode — tri-mode, never hardcoded local-only"
+    },
+    "escalation_thresholds": {
+      "type": "object",
+      "properties": {
+        "max_turns": { "type": "integer", "minimum": 1 },
+        "system_prompt_chars": { "type": "integer" },
+        "escalate_on_keyword": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "tools_allowed": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "approval_gates": {
+      "type": "array",
+      "description": "Tool names requiring human approval before execution",
+      "items": { "type": "string" }
+    },
+    "output_contract": {
+      "type": "string",
+      "description": "Schema reference for result envelopes"
+    }
+  }
+}

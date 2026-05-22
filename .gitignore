@@ -4,4 +4,13 @@ __pycache__/
 lib/
 *.log
 .env
+.env.*
 .DS_Store
+
+# local-only artifacts
+secretary.db
+*.backup.*
+*.PRE_REVERT.*
+*.pre_bridge
+*.pre_splice*
+*.bak

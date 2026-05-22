@@ -1,0 +1,21 @@
+{
+  "profiles": {
+    "filesystem": {
+      "description": "File read/write/bash — no browser. For local data tasks.",
+      "tools": ["bash", "read_file", "write_file", "done"]
+    },
+    "browser": {
+      "description": "Browser + search + file. For web navigation tasks.",
+      "tools": ["browser_navigate", "browser_click", "browser_fill", "browser_read", "web_search", "write_file", "done"]
+    },
+    "full": {
+      "description": "All 9 tools. For complex mixed tasks.",
+      "tools": ["browser_navigate", "browser_click", "browser_fill", "browser_read", "web_search", "bash", "read_file", "write_file", "done"]
+    }
+  },
+  "default": "full",
+  "auto_classify": [
+    {"keywords": ["open", "navigate", "click", "fill", "website", "page", "browser", "url", "http"], "profile": "browser"},
+    {"keywords": ["file", "write", "read", "create", "save", "script", "run", "bash", "command"], "profile": "filesystem"}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "secretary.autonomous.v1/incident_event",
+  "title": "Secretary Incident Event",
+  "type": "object",
+  "required": ["incident_id", "task_id", "error", "retry_count", "ts"],
+  "properties": {
+    "incident_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "step_id": { "type": "string" },
+    "error": {
+      "type": "string",
+      "description": "Error message or traceback (capped 1000 chars)"
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Which retry this incident occurred on"
+    },
+    "ts": { "type": "string", "format": "date-time" }
+  }
+}

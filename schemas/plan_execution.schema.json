@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "secretary.autonomous.v1/plan_execution",
+  "title": "Secretary Plan Execution Step",
+  "type": "object",
+  "required": ["step_id", "task_id", "turn_num", "ts"],
+  "properties": {
+    "step_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "turn_num": { "type": "integer", "minimum": 0 },
+    "directive": {
+      "type": "string",
+      "description": "tool_name:serialized_args"
+    },
+    "result": { "type": "string" },
+    "ts": { "type": "string", "format": "date-time" }
+  }
+}

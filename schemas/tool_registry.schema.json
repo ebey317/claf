@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "secretary.autonomous.v1/tool_registry",
+  "title": "Secretary Tool Registry",
+  "type": "object",
+  "required": ["tools"],
+  "properties": {
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "enabled", "category"],
+        "properties": {
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "category": {
+            "type": "string",
+            "enum": ["browser", "shell", "filesystem", "connector"]
+          },
+          "requires_approval": { "type": "boolean", "default": false },
+          "requires_credentials": { "type": "boolean", "default": false },
+          "credential_key": { "type": "string" }
+        }
+      }
+    }
+  }
+}

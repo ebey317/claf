@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "secretary.autonomous.v1/task_intake",
+  "title": "Secretary Task Intake",
+  "type": "object",
+  "required": ["goal"],
+  "properties": {
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "description": "Natural language goal for the secretary to complete"
+    },
+    "session": {
+      "type": "string",
+      "description": "Browser session identifier for Chrome actions"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["low", "normal", "high"],
+      "default": "normal"
+    }
+  }
+}
