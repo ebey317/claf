@@ -1,0 +1,7 @@
+FROM qwen2.5:7b
+
+PARAMETER num_ctx 4096
+PARAMETER num_predict -1
+PARAMETER num_keep 1024
+
+SYSTEM """You are an automated MCP agent. Keep your tool calls concise. Use tools only when explicitly needed."""

@@ -70,7 +70,7 @@ _LOCAL_PROVIDER = Provider(
     name="local-ollama",
     pool="local",
     kind="ollama",
-    model=os.environ.get("CLAF_LOCAL_MODEL", "qwen3-vl:2b"),
+    model=os.environ.get("CLAF_LOCAL_MODEL", "qwen2.5:3b"),
     url=os.environ.get("CLAF_OLLAMA_URL", "http://localhost:11434/api/chat"),
     env_key=None,
     enabled=True,
@@ -124,7 +124,7 @@ def _cloud_peers() -> list[Provider]:
         ),
         Provider(
             tier=6, name="anthropic", pool="cloud", kind="anthropic",
-            model="claude-sonnet-4-5",
+            model="claude-opus-4-7",
             url="https://api.anthropic.com/v1/messages",
             env_key="ANTHROPIC_API_KEY",
             enabled=_env_present("ANTHROPIC_API_KEY"),

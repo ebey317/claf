@@ -31,6 +31,12 @@ from __future__ import annotations
 
 import json
 import os
+
+def get_page_content(browser_data):
+    if len(browser_data) > 500:
+        return browser_data[:500] + "... [truncated]"
+    return browser_data
+
 import re
 import time
 import uuid
@@ -38,7 +44,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 _ENV_FILE = Path(__file__).parent / ".env"
 if _ENV_FILE.exists():
@@ -50,7 +56,7 @@ if _ENV_FILE.exists():
         os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
 # Bootstrap: pull cloud-peer API keys from the operator's keystore at
-# ~/.master_ai_keys (JSON) and project them into env vars that claf_config
+# ~/.master_ai_keys (JSON or KEY=VALUE) and project them into env vars that claf_config
 # reads. This keeps keys out of .env (and out of git) while still making
 # every cloud peer reachable in hybrid/cloud modes. Local-only mode never
 # touches this — claf_config doesn't read the env keys when MODE=local.
@@ -63,16 +69,59 @@ _KEY_MAP = {
     "cerebras": "CEREBRAS_API_KEY",
     "fireworks": "FIREWORKS_API_KEY",
 }
+
+
+def _normalize_bootstrap_key(raw_key: str) -> str:
+    key = (raw_key or "").strip()
+    if not key:
+        return ""
+    if key in _KEY_MAP.values():
+        return key
+    lower = key.lower()
+    if lower in _KEY_MAP:
+        return _KEY_MAP[lower]
+    return key.upper()
+
+
+def _load_keys_json_or_kv(path: Path) -> dict[str, str]:
+    raw = path.read_text()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            out: dict[str, str] = {}
+            for k, v in parsed.items():
+                k_norm = _normalize_bootstrap_key(str(k))
+                v_norm = str(v).strip() if v is not None else ""
+                if k_norm and v_norm:
+                    out[k_norm] = v_norm
+            return out
+    except Exception:
+        pass
+
+    out: dict[str, str] = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k_norm = _normalize_bootstrap_key(k)
+        v_norm = v.strip().strip('"').strip("'")
+        if k_norm and v_norm:
+            out[k_norm] = v_norm
+    return out
+
+
 if _KEYS_FILE.exists():
     try:
-        _ks = json.loads(_KEYS_FILE.read_text())
-        for _src, _env in _KEY_MAP.items():
-            _v = (_ks.get(_src) or "").strip()
+        _ks = _load_keys_json_or_kv(_KEYS_FILE)
+        for _env in set(_KEY_MAP.values()):
+            _v = (_ks.get(_env) or "").strip()
             if _v:
                 os.environ.setdefault(_env, _v)
     except Exception:
         pass  # if keystore is malformed, fall back to whatever env already has
 
+import sensei_supervisor as supervisor  # ReAct XML tool-call translator (off-grid MCP)
 from claf_config import MODE, PROVIDERS, describe, select_provider, _is_hard_task
 
 
@@ -208,14 +257,23 @@ def anthropic_to_ollama_messages(claude_messages: list) -> list[dict]:
     return out
 
 
-def ollama_chat(provider, messages: list[dict]) -> tuple[str, dict]:
-    # Context window is configurable per CLAF_OLLAMA_CTX (default 2048).
-    # Vision models have a large compute-graph buffer that scales with ctx —
-    # 4096 needed ~12.5 GiB which busts 15 GiB boxes; 2048 fits comfortably.
+def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None) -> tuple[str, dict, bool]:
+    import sensei_supervisor as supervisor
     num_ctx = int(os.environ.get("CLAF_OLLAMA_CTX", "2048"))
+    user_msg = " ".join(m.get("content", "") for m in messages if m.get("role") == "user")
+    mode = supervisor.sniff_mode(user_msg, bool(tools), False)
+    sys_prompt = supervisor.build_system_prompt(mode, tools)
+    if sys_prompt:
+        has_system = any(m.get("role") == "system" for m in messages)
+        if has_system:
+            messages = [{"role": "system", "content": sys_prompt}] + [m for m in messages if m.get("role") != "system"]
+        else:
+            messages = [{"role": "system", "content": sys_prompt}] + messages
+    messages_out = messages
+    used_react = (mode == "work" and bool(tools))
     payload = {
         "model": provider.model,
-        "messages": messages,
+        "messages": messages_out,
         "stream": False,
         "options": {
             "temperature": 0.1,
@@ -223,6 +281,8 @@ def ollama_chat(provider, messages: list[dict]) -> tuple[str, dict]:
             "num_ctx": num_ctx,
         },
     }
+    if used_react:
+        payload["options"]["stop"] = ["</tool_call>"]
     with httpx.Client(timeout=300.0) as client:
         r = client.post(provider.url, json=payload)
         r.raise_for_status()
@@ -230,9 +290,6 @@ def ollama_chat(provider, messages: list[dict]) -> tuple[str, dict]:
     msg = data.get("message", {})
     text = msg.get("content", "")
     thinking = msg.get("thinking", "")
-    # Defensive: if a thinking model burned its whole budget on think and
-    # emitted empty content, surface that to Claude Code instead of silently
-    # returning blank — otherwise the UI looks like the model failed.
     if not text and thinking:
         log("thinking_only_response", thinking_chars=len(thinking), model=provider.model)
         text = (
@@ -243,7 +300,7 @@ def ollama_chat(provider, messages: list[dict]) -> tuple[str, dict]:
         "input_tokens": data.get("prompt_eval_count", 0),
         "output_tokens": data.get("eval_count", 0),
     }
-    return text, usage
+    return text, usage, used_react
 
 
 def openai_compat_chat(provider, messages: list[dict]) -> tuple[str, dict]:
@@ -271,7 +328,7 @@ def openai_compat_chat(provider, messages: list[dict]) -> tuple[str, dict]:
     return text, usage
 
 
-def anthropic_direct_chat(provider, body: dict) -> tuple[str, dict]:
+def anthropic_direct_chat(provider, body: dict) -> tuple[list, dict]:
     """Pass-through to the real Anthropic API. Reuses the operator's existing
     Anthropic message body shape since Claude Code is already producing it."""
     key = os.environ.get(provider.env_key or "", "")
@@ -290,14 +347,14 @@ def anthropic_direct_chat(provider, body: dict) -> tuple[str, dict]:
         r = client.post(provider.url, json=payload, headers=headers)
         r.raise_for_status()
         data = r.json()
-    # Anthropic content is already a list of blocks; flatten text parts only.
-    text_parts = [b.get("text", "") for b in data.get("content", []) if isinstance(b, dict) and b.get("type") == "text"]
-    text = "".join(text_parts)
+    # Anthropic returns native content blocks (text + tool_use); pass them
+    # through unchanged so Claude Code's native tool dispatcher fires.
+    content_blocks = data.get("content", []) or []
     usage = {
         "input_tokens": data.get("usage", {}).get("input_tokens", 0),
         "output_tokens": data.get("usage", {}).get("output_tokens", 0),
     }
-    return text, usage
+    return content_blocks, usage
 
 
 # Directive parsing: small local models emit tool calls as TEXT in several
@@ -322,7 +379,22 @@ _DIRECTIVE_PATTERNS: list[tuple[re.Pattern, str, str]] = [
 # many lines, so we use the regex below ONLY to locate the start of a call,
 # then walk the arg blob with a state machine in _find_funccalls().
 _FUNCCALL_START = re.compile(
-    r"(?<![A-Za-z_])([A-Z][A-Za-z_]+)\s*\(",
+    r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_.:-]*)\s*\(",
+)
+
+# Local models often emit plain command lines rather than strict function
+# syntax. Accept these line forms and map them to available tool names.
+_TOOL_LINE_PREFIX = re.compile(
+    r"^\s*(?:call|use|invoke|run|execute)\s+([A-Za-z_][A-Za-z0-9_.:-]*)(?:\s+(.+?))?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_TOOL_LINE_DIRECTIVE = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_.:-]*)\s*:\s*(.+?)\s*$",
+    re.MULTILINE,
+)
+_TOOL_LINE_BARE = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_.:-]*)\s*$",
+    re.MULTILINE,
 )
 
 
@@ -401,9 +473,29 @@ _KV_PATTERN = re.compile(
 
 
 def _find_tool(available: list, name: str) -> dict | None:
-    target = name.lower()
+    target = (name or "").strip().strip("`'\"").rstrip(":").lower()
+    if not target:
+        return None
     for t in available or []:
-        if isinstance(t, dict) and str(t.get("name", "")).lower() == target:
+        if not isinstance(t, dict):
+            continue
+        tool_name = str(t.get("name", "")).strip().lower()
+        if not tool_name:
+            continue
+        aliases = {tool_name}
+        if "__" in tool_name:
+            parts = [p for p in tool_name.split("__") if p]
+            if parts:
+                aliases.add(parts[-1])
+            if len(parts) >= 2:
+                aliases.add(f"{parts[-2]}.{parts[-1]}")
+        if "." in tool_name:
+            aliases.add(tool_name.split(".")[-1])
+        if ":" in tool_name:
+            aliases.add(tool_name.split(":")[-1])
+        if "-" in tool_name:
+            aliases.add(tool_name.split("-")[-1])
+        if target in aliases:
             return t
     return None
 
@@ -418,6 +510,46 @@ def _kv_args(raw: str) -> dict:
         # unescape backslash sequences for quoted values
         out[key] = val.encode().decode("unicode_escape", errors="ignore") if "\\" in val else val
     return out
+
+
+def _tool_schema(tool: dict) -> dict:
+    return (tool or {}).get("inputSchema") or (tool or {}).get("input_schema") or {}
+
+
+def _tool_requires_input(tool: dict) -> bool:
+    req = _tool_schema(tool).get("required") or []
+    return bool(req)
+
+
+def _tool_input_from_text(tool: dict, raw: str | None) -> dict | None:
+    schema = _tool_schema(tool)
+    props = schema.get("properties") or {}
+    required = list(schema.get("required") or [])
+    arg_text = (raw or "").strip()
+    if not props:
+        return {}
+    if arg_text.startswith("{") and arg_text.endswith("}"):
+        try:
+            obj = json.loads(arg_text)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+    if not arg_text:
+        return None if required else {}
+    keys = list(props.keys())
+    if len(keys) == 1:
+        return {keys[0]: arg_text}
+    if set(keys) == {"where", "text"}:
+        if "|" in arg_text:
+            where, txt = arg_text.split("|", 1)
+            return {"where": where.strip(), "text": txt.strip()}
+        if "=>" in arg_text:
+            where, txt = arg_text.split("=>", 1)
+            return {"where": where.strip(), "text": txt.strip()}
+    if len(required) == 1:
+        return {required[0]: arg_text}
+    return None
 
 
 def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[dict], bool]:
@@ -467,7 +599,7 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
         if not tool:
             continue
         kv = _kv_args(args_raw)
-        if not kv:
+        if not kv and _tool_requires_input(tool):
             continue
         found.append(
             (
@@ -477,10 +609,34 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
                     "type": "tool_use",
                     "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
                     "name": tool["name"],
-                    "input": kv,
+                    "input": kv or {},
                 },
             )
         )
+
+    # Pass 3: line-command patterns (call/use/invoke TOOL, TOOL: args, TOOL)
+    for pattern in (_TOOL_LINE_PREFIX, _TOOL_LINE_DIRECTIVE, _TOOL_LINE_BARE):
+        for m in pattern.finditer(text):
+            tool_name = m.group(1)
+            arg_text = m.group(2) if m.lastindex and m.lastindex >= 2 else ""
+            tool = _find_tool(available_tools, tool_name)
+            if not tool:
+                continue
+            parsed_input = _tool_input_from_text(tool, arg_text)
+            if parsed_input is None and _tool_requires_input(tool):
+                continue
+            found.append(
+                (
+                    m.start(),
+                    m.end(),
+                    {
+                        "type": "tool_use",
+                        "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                        "name": tool["name"],
+                        "input": parsed_input or {},
+                    },
+                )
+            )
 
     if not found:
         return [{"type": "text", "text": text}], False
@@ -623,6 +779,86 @@ def list_models():
     return {"data": data}
 
 
+def _sse_events(response: dict):
+    """Re-emit a completed Anthropic response as Anthropic-format SSE events.
+    Takes the exact dict produced by wrap_anthropic_response so the streaming
+    path stays byte-for-byte consistent with the non-streaming path — same
+    msg_id, same content, same stop_reason, same usage. Fake-streamed: one
+    text_delta per text block, one input_json_delta per tool_use block. No
+    token-by-token generation — provider call still completes synchronously."""
+    msg_id = response.get("id")
+    model = response.get("model")
+    content_blocks = response.get("content", []) or []
+    usage = response.get("usage", {}) or {}
+    stop_reason = response.get("stop_reason", "end_turn")
+    stop_sequence = response.get("stop_sequence")
+
+    def _event(name: str, data: dict) -> str:
+        return f"event: {name}\ndata: {json.dumps(data)}\n\n"
+
+    yield _event("message_start", {
+        "type": "message_start",
+        "message": {
+            "id": msg_id,
+            "type": "message",
+            "role": "assistant",
+            "content": [],
+            "model": model,
+            "stop_reason": None,
+            "stop_sequence": None,
+            "usage": {
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": 0,
+            },
+        },
+    })
+    yield _event("ping", {"type": "ping"})
+
+    for i, block in enumerate(content_blocks):
+        btype = block.get("type", "text")
+        if btype == "text":
+            yield _event("content_block_start", {
+                "type": "content_block_start",
+                "index": i,
+                "content_block": {"type": "text", "text": ""},
+            })
+            yield _event("content_block_delta", {
+                "type": "content_block_delta",
+                "index": i,
+                "delta": {"type": "text_delta", "text": block.get("text", "")},
+            })
+        elif btype == "tool_use":
+            yield _event("content_block_start", {
+                "type": "content_block_start",
+                "index": i,
+                "content_block": {
+                    "type": "tool_use",
+                    "id": block.get("id", f"toolu_{uuid.uuid4().hex[:24]}"),
+                    "name": block.get("name", ""),
+                    "input": {},
+                },
+            })
+            yield _event("content_block_delta", {
+                "type": "content_block_delta",
+                "index": i,
+                "delta": {
+                    "type": "input_json_delta",
+                    "partial_json": json.dumps(block.get("input", {}) or {}),
+                },
+            })
+        yield _event("content_block_stop", {
+            "type": "content_block_stop",
+            "index": i,
+        })
+
+    yield _event("message_delta", {
+        "type": "message_delta",
+        "delta": {"stop_reason": stop_reason, "stop_sequence": stop_sequence},
+        "usage": {"output_tokens": usage.get("output_tokens", 0)},
+    })
+    yield _event("message_stop", {"type": "message_stop"})
+
+
 @app.post("/v1/messages")
 async def messages(request: Request):
     body = await request.json()
@@ -633,17 +869,6 @@ async def messages(request: Request):
         has_system=bool(body.get("system")),
         stream=body.get("stream", False),
     )
-
-    if body.get("stream"):
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": {
-                    "type": "invalid_request_error",
-                    "message": "CLAF v0 does not support streaming. Disable stream:true on the client.",
-                }
-            },
-        )
 
     system_text = flatten_system(body.get("system"))
     messages = anthropic_to_ollama_messages(body.get("messages", []))
@@ -744,12 +969,19 @@ async def messages(request: Request):
 
     try:
         if provider.kind == "ollama":
-            assistant_text, usage = ollama_chat(provider, messages)
+            assistant_text, usage, used_react = ollama_chat(provider, messages, body.get("tools"))
+            if used_react:
+                content_blocks, tool_use = supervisor.parse_work_response(assistant_text, body.get("tools"))
+            else:
+                content_blocks, tool_use = parse_directives_to_content(assistant_text, body.get("tools", []) or [])
         elif provider.kind == "openai_compat":
             assistant_text, usage = openai_compat_chat(provider, messages)
+            content_blocks, tool_use = parse_directives_to_content(assistant_text, body.get("tools", []) or [])
         elif provider.kind == "anthropic":
-            # tier-4 pass-through uses the original Anthropic-shape body
-            assistant_text, usage = anthropic_direct_chat(provider, body)
+            # Anthropic returns native content blocks — no directive parsing.
+            content_blocks, usage = anthropic_direct_chat(provider, body)
+            tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content_blocks)
+            assistant_text = "".join(b.get("text", "") for b in content_blocks if isinstance(b, dict) and b.get("type") == "text")
         else:
             raise RuntimeError(f"unknown provider kind: {provider.kind}")
     except Exception as e:
@@ -764,7 +996,6 @@ async def messages(request: Request):
             },
         )
 
-    content_blocks, tool_use = parse_directives_to_content(assistant_text, body.get("tools", []) or [])
     response = wrap_anthropic_response(requested_model, content_blocks, usage, tool_use)
     log(
         "response_out",
@@ -776,6 +1007,11 @@ async def messages(request: Request):
         input_tokens=usage["input_tokens"],
         output_tokens=usage["output_tokens"],
     )
+    if body.get("stream"):
+        return StreamingResponse(
+            _sse_events(response),
+            media_type="text/event-stream",
+        )
     return response
 
 
@@ -789,3 +1025,31 @@ if __name__ == "__main__":
     print(f"Listening on http://127.0.0.1:{PORT}  (set ANTHROPIC_BASE_URL=http://localhost:{PORT})")
     print(f"Log: {LOG_FILE}")
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")
+
+
+# ---------------------------------------------------------------------------
+# tool_bridge integration helpers
+# Added by install_tool_bridge.sh — do not edit by hand.
+# ---------------------------------------------------------------------------
+def claf_apply_tool_bridge(body: dict) -> tuple[dict, bool]:
+    """If the request carries tools[], rewrite as ReAct for Ollama.
+    Returns (ollama_request_body, used_react_bridge)."""
+    if tool_bridge.has_tools(body):
+        return tool_bridge.prepare_ollama_request(body), True
+    return body, False
+
+
+def claf_wrap_ollama_text_as_anthropic(raw_text: str, model: str,
+                                        used_react: bool, input_tokens: int = 0,
+                                        output_tokens: int = 0) -> dict:
+    """Parse Ollama's raw assistant text and wrap as Anthropic /v1/messages
+    response. If used_react is True, parse <tool_call> blocks into tool_use."""
+    if used_react:
+        blocks, stop = supervisor.parse_work_response(raw_text)
+    else:
+        blocks = [{"type": "text", "text": raw_text}]
+        stop = "end_turn"
+    return tool_bridge.build_anthropic_response(
+        blocks, stop, model=model,
+        input_tokens=input_tokens, output_tokens=output_tokens,
+    )
