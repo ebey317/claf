@@ -36,8 +36,14 @@ def render(event: dict) -> str:
         name = event.get("picked_name", "-")
         model = event.get("picked_model", "-")
         mode = event.get("mode", "-")
+        trickle = event.get("trickle_mode", "-")
+        env_key = event.get("env_key", "—")
+        display = event.get("selected_display", f"{name} -> {model}")
         marker = "▶ local " if tier == 0 else f"▲ tier{tier}"
-        return f"[{ts}]    {marker:8} ROUTE   {name:<18}  model={model:<24}  mode={mode}"
+        return (
+            f"[{ts}]    {marker:8} ROUTE   {display:<42}"
+            f" key={env_key:<28} mode={mode:<8} lane={trickle}"
+        )
 
     if e == "response_out":
         return (
@@ -98,9 +104,22 @@ def tail_jsonl(path: Path):
             print(render(event), flush=True)
 
 
+def live_state():
+    """Mirror Claude Code's status bar. statusLine writes /tmp/claude_runtime
+    on every refresh; we read it back so both displays show the same two
+    boxes: claude=<model> | style=<style>."""
+    try:
+        with open("/tmp/claude_runtime", "r") as f:
+            return [f.read().strip() or "claude=? | style=?"]
+    except Exception:
+        return ["claude=? | style=?  (status not yet written)"]
+
+
 def banner():
     print("=" * 78)
     print(f" CLAF WATCH   log={LOG_FILE}")
+    for line in live_state():
+        print(f" {line}")
     print(f" tailing routing decisions; Ctrl+C to exit")
     print("=" * 78)
 
