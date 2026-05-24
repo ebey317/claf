@@ -44,6 +44,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
 _ENV_FILE = Path(__file__).parent / ".env"
@@ -62,12 +63,29 @@ if _ENV_FILE.exists():
 # touches this — claf_config doesn't read the env keys when MODE=local.
 _KEYS_FILE = Path.home() / ".master_ai_keys"
 _KEY_MAP = {
+    # LLM cloud peers
     "anthropic": "ANTHROPIC_API_KEY",
     "groq": "GROQ_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
     "cerebras": "CEREBRAS_API_KEY",
     "fireworks": "FIREWORKS_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    # Tool keys — projected so any tool reading these env vars gets them
+    "FIRECRAWL_API_KEY": "FIRECRAWL_API_KEY",
+    "SERPER_API_KEY": "SERPER_API_KEY",
+}
+
+
+# Source-name aliases. Lets the keys file use a name like ANTHROPIC_CONSOLE_KEY
+# (explicit: this is the platform/Console account, NOT the Max subscription)
+# while CLAF's own code keeps reading ANTHROPIC_API_KEY from env. Anyone who
+# accidentally sources ~/.master_ai_keys into a shell only ends up with
+# ANTHROPIC_CONSOLE_KEY exported, so Claude Code (which reads ANTHROPIC_API_KEY)
+# cannot get crossed onto the Console account by accident.
+_SOURCE_NAME_ALIASES = {
+    "ANTHROPIC_CONSOLE_KEY": "ANTHROPIC_API_KEY",
 }
 
 
@@ -75,12 +93,15 @@ def _normalize_bootstrap_key(raw_key: str) -> str:
     key = (raw_key or "").strip()
     if not key:
         return ""
+    upper = key.upper()
+    if upper in _SOURCE_NAME_ALIASES:
+        return _SOURCE_NAME_ALIASES[upper]
     if key in _KEY_MAP.values():
         return key
     lower = key.lower()
     if lower in _KEY_MAP:
         return _KEY_MAP[lower]
-    return key.upper()
+    return upper
 
 
 def _load_keys_json_or_kv(path: Path) -> dict[str, str]:
@@ -122,7 +143,12 @@ if _KEYS_FILE.exists():
         pass  # if keystore is malformed, fall back to whatever env already has
 
 import sensei_supervisor as supervisor  # ReAct XML tool-call translator (off-grid MCP)
-from claf_config import MODE, PROVIDERS, describe, select_provider, _is_hard_task
+from claf_config import (
+    MODE, PROVIDERS, describe, select_provider, _is_hard_task,
+    _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
+    next_cloud_peer, pick_cloud_peer,
+)
+import claf_throttle as throttle
 
 
 PORT = int(os.environ.get("CLAF_PORT", "8000"))
@@ -164,6 +190,16 @@ def select_local_model(body: dict) -> str:
     return LOCAL_MODEL
 
 app = FastAPI(title="CLAF orchestrator", version="0.4.0")
+
+# Browser UIs and extensions hit CLAF cross-origin, so preflight requests must succeed.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["null"],
+    allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|chrome-extension://.*|moz-extension://.*)$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def log(event: str, **fields) -> None:
@@ -328,13 +364,31 @@ def openai_compat_chat(provider, messages: list[dict]) -> tuple[str, dict]:
     return text, usage
 
 
+_CLAF_INTERNAL_METADATA_KEYS = ("force_cloud", "emergency", "escalate")
+
+
+def _sanitize_for_anthropic(body: dict) -> dict:
+    """Strip CLAF-internal control fields from a request body before it's sent
+    upstream to api.anthropic.com. Anthropic rejects unknown metadata keys
+    with a 400, so anything we use to drive trickle routing must come out."""
+    payload = dict(body)
+    meta = payload.get("metadata")
+    if isinstance(meta, dict):
+        cleaned = {k: v for k, v in meta.items() if k not in _CLAF_INTERNAL_METADATA_KEYS}
+        if cleaned:
+            payload["metadata"] = cleaned
+        else:
+            payload.pop("metadata", None)
+    return payload
+
+
 def anthropic_direct_chat(provider, body: dict) -> tuple[list, dict]:
     """Pass-through to the real Anthropic API. Reuses the operator's existing
     Anthropic message body shape since Claude Code is already producing it."""
     key = os.environ.get(provider.env_key or "", "")
     if not key:
         raise RuntimeError(f"{provider.name}: env var {provider.env_key} not set")
-    payload = dict(body)
+    payload = _sanitize_for_anthropic(body)
     payload["model"] = provider.model
     payload["stream"] = False
     payload.setdefault("max_tokens", 4096)
@@ -742,6 +796,7 @@ def stats():
             "cloud_input_tokens": cloud_in,
             "cloud_output_tokens": cloud_out,
         },
+        "throttle": throttle.snapshot(),
         "happy_signal": cloud_in == 0 and cloud_out == 0,
     }
 
@@ -859,6 +914,77 @@ def _sse_events(response: dict):
     yield _event("message_stop", {"type": "message_stop"})
 
 
+# ---------------------------------------------------------------------------
+# Tap mode helpers — extract a fenced code block from the local draft, send
+# JUST that snippet to a cheap cloud peer with an intent-specific template,
+# splice the polished version back in by index.
+# ---------------------------------------------------------------------------
+
+_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\n(.*?)\n```", re.DOTALL)
+
+
+def _extract_code_block(text: str):
+    """Return (snippet, start, end) for the longest fenced block, or None."""
+    matches = list(_FENCE_RE.finditer(text or ""))
+    if not matches:
+        return None
+    longest = max(matches, key=lambda m: len(m.group(1)))
+    return longest.group(1), longest.start(), longest.end()
+
+
+def _do_tap_polish(body: dict, draft_text: str) -> str:
+    """Polish the largest code block in draft_text via a cheap cloud peer.
+    Returns draft_text unchanged if no snippet found or polish fails."""
+    ext = _extract_code_block(draft_text)
+    if not ext:
+        log("tap_no_snippet", draft_chars=len(draft_text or ""))
+        return draft_text
+    snippet, start, end = ext
+
+    prompt_text = _flatten_prompt_text(body)
+    intent = detect_tap_intent(prompt_text)
+    template = TAP_TEMPLATES.get(intent, TAP_TEMPLATES["generic"])
+    polish_prompt = template.format(snippet=f"INTENT: {prompt_text[:300]}\n\nDRAFT:\n```\n{snippet}\n```")
+
+    try:
+        # Tap polish NEVER uses direct Anthropic billing (kind="anthropic",
+        # tier 9). openai_compat only: groq(2), cerebras(3), fireworks(6),
+        # openrouter(7), ollama-cloud-coder(1). Console key stays untouched.
+        peer = pick_cloud_peer(
+            prefer_tiers=(2, 3, 6, 7, 1),
+            allowed_kinds=("openai_compat",),
+        )
+        if peer is None:
+            log("tap_no_cloud_peer")
+            return draft_text
+        polish_msgs = [{"role": "user", "content": polish_prompt}]
+        if peer.kind == "openai_compat":
+            polished_text, _usage = openai_compat_chat(peer, polish_msgs)
+        elif peer.kind == "anthropic":
+            polish_body = {
+                "model": peer.model,
+                "max_tokens": 800,
+                "messages": polish_msgs,
+            }
+            polished_blocks, _usage = anthropic_direct_chat(peer, polish_body)
+            polished_text = "".join(
+                b.get("text", "") for b in polished_blocks
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+        else:
+            log("tap_unknown_peer_kind", kind=peer.kind)
+            return draft_text
+    except Exception as e:
+        log("tap_polish_failed", error=str(e))
+        return draft_text
+
+    polished_ext = _extract_code_block(polished_text)
+    polished_block = polished_ext[0] if polished_ext else polished_text.strip()
+    new_text = draft_text[:start] + f"```\n{polished_block}\n```" + draft_text[end:]
+    log("tap_polish_ok", intent=intent, peer=peer.name, before=len(snippet), after=len(polished_block))
+    return new_text
+
+
 @app.post("/v1/messages")
 async def messages(request: Request):
     body = await request.json()
@@ -893,49 +1019,76 @@ async def messages(request: Request):
 
     provider = select_provider(body)
 
-    # Routing-proof fields (verification-spec layer 3): make the reason for
-    # this routing decision auditable in one log line. A consumer never needs
-    # to read CLAF code to understand why their request went where it went.
-    hard = _is_hard_task(body)
-    if MODE == "local":
-        route_reason = "local_mode_only"
-        local_attempted = True
-        cloud_escalated = False
-    elif MODE == "cloud":
-        route_reason = "cloud_mode_bypass_local"
-        local_attempted = False
-        cloud_escalated = True
-    else:  # hybrid
-        if hard:
-            route_reason = "hybrid_hard_task_escalated"
-            local_attempted = True   # local would have been chosen for routine
-            cloud_escalated = True
-        else:
-            route_reason = "hybrid_routine_local"
-            local_attempted = True
-            cloud_escalated = False
-
-    log(
-        "route_decision",
-        mode=MODE,
-        provider=provider.name,
-        pool=provider.pool,
-        model=provider.model,
-        route_reason=route_reason,
-        local_attempted=local_attempted,
-        cloud_escalated=cloud_escalated,
-        # legacy fields kept for back-compat with /stats and existing scrapers:
-        picked_tier=provider.tier,
-        picked_name=provider.name,
-        picked_model=provider.model,
-    )
+    # Three-mode trickle routing (Local / Tap / Flash). Only meaningful in
+    # hybrid — local mode refuses cloud regardless, cloud mode goes cloud
+    # regardless. Caller can force flash via metadata.force_cloud=true; with
+    # metadata.emergency=true that draws from the daily emergency pool instead
+    # of the hourly flash cap.
+    trickle_mode = "local"
+    trickle_reservation: str | None = None
+    trickle_scores: dict = {}
+    trickle_degrade_note = ""
+    if MODE == "hybrid":
+        desired, trickle_scores = _select_mode(body)
+        meta = body.get("metadata") or {}
+        emergency = bool(meta.get("emergency"))
+        if desired == "flash":
+            trickle_reservation = throttle.reserve(5000, "flash", emergency=emergency)
+            if trickle_reservation:
+                trickle_mode = "flash"
+                # Prefer tier-1 (Ollama Cloud: SSH-signed, no per-token billing,
+                # not Anthropic-Tier-1-rate-limited). If tier-1 is unavailable,
+                # use the next enabled cloud peer; if none exist, degrade local.
+                provider = pick_cloud_peer(prefer_tiers=(1,))
+                if provider is None:
+                    provider = pick_cloud_peer()
+                if provider is None:
+                    throttle.refund(trickle_reservation)
+                    trickle_reservation = None
+                    trickle_mode = "local"
+                    trickle_degrade_note = throttle.degrade_message("flash")
+                    log("trickle_flash_degraded_to_local", scores=trickle_scores, reason="no_cloud_peer")
+                else:
+                    log("trickle_flash_approved", reservation=trickle_reservation,
+                        emergency=emergency, scores=trickle_scores, provider=provider.name)
+            else:
+                tap_res = throttle.reserve(800, "tap")
+                if tap_res:
+                    trickle_mode = "tap"
+                    trickle_reservation = tap_res
+                    trickle_degrade_note = throttle.degrade_message("flash")
+                    log("trickle_flash_degraded_to_tap", reservation=tap_res, scores=trickle_scores)
+                else:
+                    trickle_mode = "local"
+                    trickle_degrade_note = throttle.degrade_message("flash")
+                    log("trickle_flash_degraded_to_local", scores=trickle_scores)
+        elif desired == "tap":
+            trickle_reservation = throttle.reserve(800, "tap")
+            if trickle_reservation:
+                trickle_mode = "tap"
+                log("trickle_tap_approved", reservation=trickle_reservation, scores=trickle_scores)
+            else:
+                trickle_mode = "local"
+                trickle_degrade_note = throttle.degrade_message("tap")
+                log("trickle_tap_degraded_to_local", scores=trickle_scores)
+        # else: desired == "local" — no reservation, no provider override
+        if trickle_mode == "local":
+            # Force local provider for the actual call; select_provider may
+            # have already picked local for routine traffic, but make sure.
+            local_only = [p for p in PROVIDERS if p.pool == "local" and p.enabled]
+            if local_only:
+                provider = local_only[0]
 
     # Mode lock — defense-in-depth. claf_config already prunes PROVIDERS by
     # mode at import time, but assert here that the chosen provider matches
     # mode constraints. If this trips, something is misconfigured and the
     # request was about to take a path the mode forbids. Refuse loudly (423).
-    if MODE == "local" and provider.kind != "ollama":
-        log("mode_lock", mode=MODE, attempted=provider.name, kind=provider.kind)
+    # Mode lock keyed on POOL, not KIND. Ollama-Cloud peers are kind="ollama"
+    # but pool="cloud" — they belong with the cloud peers, not with the
+    # truly-local Ollama instance. So local mode allows only pool="local"
+    # and cloud mode allows only pool="cloud".
+    if MODE == "local" and provider.pool != "local":
+        log("mode_lock", mode=MODE, attempted=provider.name, pool=provider.pool)
         return JSONResponse(
             status_code=423,
             content={
@@ -945,8 +1098,8 @@ async def messages(request: Request):
                 }
             },
         )
-    if MODE == "cloud" and provider.kind == "ollama":
-        log("mode_lock", mode=MODE, attempted=provider.name, kind=provider.kind)
+    if MODE == "cloud" and provider.pool == "local":
+        log("mode_lock", mode=MODE, attempted=provider.name, pool=provider.pool)
         return JSONResponse(
             status_code=423,
             content={
@@ -967,25 +1120,116 @@ async def messages(request: Request):
         log("dual_local_route", from_model=provider.model, to_model=routed_model, reason="image_in_request")
         provider = _replace(provider, model=routed_model)
 
-    try:
-        if provider.kind == "ollama":
-            assistant_text, usage, used_react = ollama_chat(provider, messages, body.get("tools"))
-            if used_react:
-                content_blocks, tool_use = supervisor.parse_work_response(assistant_text, body.get("tools"))
-            else:
-                content_blocks, tool_use = parse_directives_to_content(assistant_text, body.get("tools", []) or [])
-        elif provider.kind == "openai_compat":
-            assistant_text, usage = openai_compat_chat(provider, messages)
-            content_blocks, tool_use = parse_directives_to_content(assistant_text, body.get("tools", []) or [])
-        elif provider.kind == "anthropic":
-            # Anthropic returns native content blocks — no directive parsing.
-            content_blocks, usage = anthropic_direct_chat(provider, body)
-            tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content_blocks)
-            assistant_text = "".join(b.get("text", "") for b in content_blocks if isinstance(b, dict) and b.get("type") == "text")
+    # Routing-proof fields (verification-spec layer 3): emit the actual
+    # effective provider/model after any single-call model override so the
+    # watch surface answers "who took the call?" unambiguously.
+    hard = _is_hard_task(body)
+    if MODE == "local":
+        route_reason = "local_mode_only"
+        local_attempted = True
+        cloud_escalated = False
+    elif MODE == "cloud":
+        route_reason = "cloud_mode_bypass_local"
+        local_attempted = False
+        cloud_escalated = True
+    else:  # hybrid
+        if trickle_mode == "flash":
+            route_reason = "hybrid_flash_cloud"
+            local_attempted = False
+            cloud_escalated = True
+        elif trickle_mode == "tap":
+            route_reason = "hybrid_tap_local_then_cloud_polish"
+            local_attempted = True
+            cloud_escalated = True
+        elif hard:
+            route_reason = "hybrid_hard_task_escalated"
+            local_attempted = True
+            cloud_escalated = True
         else:
-            raise RuntimeError(f"unknown provider kind: {provider.kind}")
+            route_reason = "hybrid_routine_local"
+            local_attempted = True
+            cloud_escalated = False
+
+    log(
+        "route_decision",
+        mode=MODE,
+        provider=provider.name,
+        pool=provider.pool,
+        kind=provider.kind,
+        model=provider.model,
+        env_key=provider.env_key or "—",
+        trickle_mode=trickle_mode,
+        route_reason=route_reason,
+        local_attempted=local_attempted,
+        cloud_escalated=cloud_escalated,
+        selected_display=f"{provider.name} -> {provider.model}",
+        # legacy fields kept for back-compat with /stats and existing scrapers:
+        picked_tier=provider.tier,
+        picked_name=provider.name,
+        picked_model=provider.model,
+    )
+
+    # Rate-limit fallback: if the selected cloud peer returns 429, walk the
+    # tier list (skipping failed providers) until one succeeds or the pool
+    # is exhausted. Local providers are never in the fallback loop — they
+    # don't rate-limit in the same way and a local 429 would be a bug.
+    _rate_limit_failed: set[str] = set()
+    content_blocks: list[dict] = []
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    assistant_text = ""
+    tool_use = False
+
+    def _dispatch_provider(p):
+        """Call the right backend for `p`. Returns (content_blocks, usage, used_react, assistant_text, tool_use)."""
+        if p.kind == "ollama":
+            _text, _usage, _react = ollama_chat(p, messages, body.get("tools"))
+            if _react:
+                _blocks, _tool_use = supervisor.parse_work_response(_text, body.get("tools"))
+            else:
+                _blocks, _tool_use = parse_directives_to_content(_text, body.get("tools", []) or [])
+            return _blocks, _usage, _react, _text, _tool_use
+        elif p.kind == "openai_compat":
+            _text, _usage = openai_compat_chat(p, messages)
+            _blocks, _tool_use = parse_directives_to_content(_text, body.get("tools", []) or [])
+            return _blocks, _usage, False, _text, _tool_use
+        elif p.kind == "anthropic":
+            _blocks, _usage = anthropic_direct_chat(p, body)
+            _tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in _blocks)
+            _text = "".join(b.get("text", "") for b in _blocks if isinstance(b, dict) and b.get("type") == "text")
+            return _blocks, _usage, False, _text, _tool_use
+        else:
+            raise RuntimeError(f"unknown provider kind: {p.kind}")
+
+    try:
+        while True:
+            try:
+                content_blocks, usage, used_react, assistant_text, tool_use = _dispatch_provider(provider)
+                break  # success
+            except Exception as _call_exc:
+                # Check for HTTP 429 on cloud providers only — local Ollama
+                # failures are not rate-limit events and should surface immediately.
+                is_rate_limit = (
+                    provider.pool == "cloud"
+                    and hasattr(_call_exc, "response")
+                    and getattr(_call_exc.response, "status_code", None) == 429
+                )
+                if not is_rate_limit:
+                    raise  # re-raise non-429 errors immediately
+                _rate_limit_failed.add(provider.name)
+                log("rate_limit_fallback", failed_provider=provider.name,
+                    failed_tier=provider.tier, failed_so_far=sorted(_rate_limit_failed))
+                provider = next_cloud_peer(_rate_limit_failed)
+                if provider is None:
+                    raise RuntimeError(
+                        f"all cloud peers rate-limited: {sorted(_rate_limit_failed)}"
+                    ) from _call_exc
+                log("rate_limit_next_peer", next_provider=provider.name, next_tier=provider.tier)
     except Exception as e:
-        log("provider_error", tier=provider.tier, name=provider.name, error=str(e))
+        log("provider_error", tier=provider.tier, name=provider.name, error=str(e),
+            rate_limit_chain=sorted(_rate_limit_failed) if _rate_limit_failed else None)
+        if trickle_reservation:
+            throttle.refund(trickle_reservation)
+            log("trickle_refund", reservation=trickle_reservation, reason="provider_error")
         return JSONResponse(
             status_code=502,
             content={
@@ -995,6 +1239,28 @@ async def messages(request: Request):
                 }
             },
         )
+
+    # Tap polish — runs after the local draft returns, sends the largest
+    # fenced snippet to a cheap cloud peer with an intent-specific template,
+    # splices the polished version back in. Failures here are non-fatal —
+    # the local draft is still returned.
+    if trickle_mode == "tap" and provider.pool == "local" and assistant_text:
+        polished = _do_tap_polish(body, assistant_text)
+        if polished != assistant_text:
+            assistant_text = polished
+            content_blocks = [{"type": "text", "text": assistant_text}]
+            tool_use = False
+
+    # Append degrade note (visible to the operator inside the response) when
+    # the throttle had to step the request down. Local-mode 423s and pure
+    # routine local don't get a note.
+    if trickle_degrade_note:
+        assistant_text = (assistant_text or "") + "\n\n" + trickle_degrade_note
+        # Repack content blocks to surface the note in the final response.
+        if content_blocks and isinstance(content_blocks[0], dict) and content_blocks[0].get("type") == "text":
+            content_blocks[0] = {"type": "text", "text": assistant_text}
+        else:
+            content_blocks.append({"type": "text", "text": trickle_degrade_note})
 
     response = wrap_anthropic_response(requested_model, content_blocks, usage, tool_use)
     log(
@@ -1006,7 +1272,10 @@ async def messages(request: Request):
         tool_use_count=sum(1 for b in content_blocks if b.get("type") == "tool_use"),
         input_tokens=usage["input_tokens"],
         output_tokens=usage["output_tokens"],
+        trickle_mode=trickle_mode,
     )
+    if trickle_reservation:
+        throttle.commit(trickle_reservation)
     if body.get("stream"):
         return StreamingResponse(
             _sse_events(response),
