@@ -1493,14 +1493,33 @@ async def messages(request: Request):
             _blocks, _usage, _tool_use = ollama_chat(p, _msgs, _tools_eff, max_tokens=body.get("max_tokens"))
         elif p.kind == "openai_compat":
             _msgs = messages_from_anthropic(body.get("messages", []), flavor="openai")
-            if system_text:
-                _msgs.insert(0, {"role": "system", "content": system_text})
+            # Trim system + history for cloud peers too. The full Claude Code
+            # context (CLAUDE.md + memory injections) is ~60K tokens per call —
+            # that burned through Fireworks' free monthly allocation in 24 calls.
+            # Cloud peers get a higher cap than local (4000 chars vs 1500) so
+            # they retain enough context to be useful. Controlled by env vars:
+            # CLAF_CLOUD_SYS_MAX_CHARS (default 4000), CLAF_CLOUD_MAX_MSGS (default 20).
+            _cloud_sys = system_text or ""
+            _cloud_msgs = _msgs
+            _cloud_sys_max = int(os.environ.get("CLAF_CLOUD_SYS_MAX_CHARS", "4000"))
+            _cloud_msgs_max = int(os.environ.get("CLAF_CLOUD_MAX_MSGS", "20"))
+            if os.environ.get("CLAF_CLOUD_TRIM", "1") != "0":
+                if len(_cloud_sys) > _cloud_sys_max:
+                    _cloud_sys = _cloud_sys[:_cloud_sys_max]
+                    log("cloud_sys_trimmed", provider=p.name,
+                        chars_before=len(system_text or ""), chars_after=_cloud_sys_max)
+                if len(_cloud_msgs) > _cloud_msgs_max:
+                    _cloud_msgs = _cloud_msgs[-_cloud_msgs_max:]
+                    log("cloud_msgs_trimmed", provider=p.name,
+                        msgs_before=len(_msgs), msgs_after=_cloud_msgs_max)
+            if _cloud_sys:
+                _cloud_msgs = [{"role": "system", "content": _cloud_sys}] + _cloud_msgs
             _tools_eff = _tools
             if _tools and p.max_tools is not None and len(_tools) > p.max_tools:
                 log("cloud_tools_capped", provider=p.name,
                     tools_before=len(_tools), tools_after=p.max_tools)
                 _tools_eff = _tools[:p.max_tools] if p.max_tools > 0 else None
-            _blocks, _usage, _tool_use = openai_compat_chat(p, _msgs, _tools_eff)
+            _blocks, _usage, _tool_use = openai_compat_chat(p, _cloud_msgs, _tools_eff)
         elif p.kind == "anthropic":
             _blocks, _usage = anthropic_direct_chat(p, body)
             _tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in _blocks)
