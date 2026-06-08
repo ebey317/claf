@@ -1518,6 +1518,21 @@ async def messages(request: Request):
                     _cloud_msgs = _cloud_msgs[-_cloud_msgs_max:]
                     log("cloud_msgs_trimmed", provider=p.name,
                         msgs_before=len(_msgs), msgs_after=_cloud_msgs_max)
+                # Cap per-message content. A single tool_result (file read,
+                # bash output) can be 10K+ chars — enough to 413 groq even after
+                # count and system trimming. Truncate each message's string content.
+                _msg_content_max = int(os.environ.get("CLAF_CLOUD_MSG_CONTENT_MAX", "2000"))
+                _trimmed_content = False
+                _cloud_msgs_final = []
+                for _m in _cloud_msgs:
+                    c = _m.get("content")
+                    if isinstance(c, str) and len(c) > _msg_content_max:
+                        _m = dict(_m, content=c[:_msg_content_max])
+                        _trimmed_content = True
+                    _cloud_msgs_final.append(_m)
+                if _trimmed_content:
+                    log("cloud_msg_content_trimmed", provider=p.name, max_chars=_msg_content_max)
+                _cloud_msgs = _cloud_msgs_final
             if _cloud_sys:
                 _cloud_msgs = [{"role": "system", "content": _cloud_sys}] + _cloud_msgs
             _tools_eff = _tools
