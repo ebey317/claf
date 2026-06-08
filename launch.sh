@@ -18,26 +18,37 @@ set -euo pipefail
 PROXY_URL="${CLAF_PROXY_URL:-http://localhost:8000}"
 CLAF_DIR="$HOME/projects/claf"
 
-# Auto-start the orchestrator if it isn't already up. madam = one command that
-# brings the WHOLE hybrid stack online; you never manage the proxy by hand.
-if ! curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
-    echo "Orchestrator not up — starting it..."
-    # Start detached so it survives this shell; log to the usual file.
-    nohup python3 "$CLAF_DIR/orchestrator.py" >> "$CLAF_DIR/orchestrator.startup.log" 2>&1 &
-    # Wait up to ~15s for it to answer.
-    for _i in $(seq 1 30); do
-        sleep 0.5
-        if curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
-            echo "Orchestrator is up at ${PROXY_URL}"
-            break
-        fi
-    done
-    if ! curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
-        echo "ERROR: orchestrator failed to start. Check $CLAF_DIR/orchestrator.startup.log"
-        exit 1
-    fi
+# FRESH RESTART EVERY TIME. madam = one command that brings the WHOLE hybrid
+# stack online from a clean slate. A reused orchestrator serves STALE CODE — any
+# fix to orchestrator.py / claf_config.py silently doesn't take until the proxy
+# is actually restarted. So madam always kills the old one and starts fresh.
+#
+# The orchestrator runs as the `claf` systemd USER unit — managed via systemctl
+# ONLY (never `nohup python3`, which spawns rogue processes that fight systemd
+# for port 8000 and pile up as zombies). `systemctl restart` IS a kill + fresh
+# start: it SIGTERMs the old main PID, waits, then launches a new one from disk.
+echo "madam: fresh-restarting CLAF orchestrator (systemctl --user restart claf)..."
+if systemctl --user list-unit-files claf.service >/dev/null 2>&1; then
+    systemctl --user restart claf
 else
-    echo "Orchestrator already up at ${PROXY_URL}"
+    # No systemd unit (portable fallback): kill any orchestrator, then start one.
+    echo "  (no claf.service unit found — falling back to pkill + nohup)"
+    pkill -9 -f "$CLAF_DIR/orchestrator.py" 2>/dev/null || true
+    sleep 1
+    nohup python3 "$CLAF_DIR/orchestrator.py" >> "$CLAF_DIR/orchestrator.startup.log" 2>&1 &
+fi
+
+# Wait up to ~15s for the fresh proxy to answer.
+for _i in $(seq 1 30); do
+    sleep 0.5
+    if curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
+        echo "Orchestrator is up at ${PROXY_URL} (fresh)"
+        break
+    fi
+done
+if ! curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
+    echo "ERROR: orchestrator failed to start. Check: journalctl --user -u claf -n 30"
+    exit 1
 fi
 
 export ANTHROPIC_BASE_URL="$PROXY_URL"
