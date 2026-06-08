@@ -215,6 +215,42 @@ def log(event: str, **fields) -> None:
         f.write(json.dumps(entry) + "\n")
 
 
+# Operational charter prepended to every CLOUD peer's system prompt. Lives in
+# cloud_charter.md so it's tunable without a code edit — change the file, the
+# next request picks it up (mtime-cached, no restart needed). The inline fallback
+# guarantees the hard bans survive even if the file is missing/unreadable.
+_CHARTER_FILE = Path(__file__).parent / "cloud_charter.md"
+_CHARTER_FALLBACK = (
+    "OPERATIONAL CHARTER — you are MCP, the operator's execution agent. ACT, don't plan.\n"
+    "- Operator says open/go/check/click/read/run X → call the tool NOW, no preamble.\n"
+    "- After acting, show evidence (screenshot/output). 'Done' without proof = forbidden.\n"
+    "- NEVER call AskUserQuestion. Ambiguous → make the reasonable call and proceed.\n"
+    "- NEVER invoke a skill unless the user typed a literal /command. Never list skills.\n"
+    "- A casual statement ('you can read X') → acknowledge one line, continue. No config editor.\n"
+    "- Browser = sensei only: tab_create, then read_full, screenshot to confirm.\n"
+    "- open tab → mcp__sensei__tab_create; screenshot → mcp__sensei__screenshot;\n"
+    "  read page → mcp__sensei__read_full; task list → TaskList.\n\n"
+)
+_charter_cache: dict = {"mtime": None, "text": None}
+
+
+def _load_cloud_charter() -> str:
+    """Return the cloud operational charter, reloading from disk when the file
+    changes. Falls back to the inline charter if the file is missing or empty."""
+    try:
+        st = _CHARTER_FILE.stat()
+        if _charter_cache["mtime"] != st.st_mtime:
+            txt = _CHARTER_FILE.read_text(encoding="utf-8").strip()
+            if txt:
+                _charter_cache["mtime"] = st.st_mtime
+                _charter_cache["text"] = txt + "\n\n"
+        if _charter_cache["text"]:
+            return _charter_cache["text"]
+    except (OSError, UnicodeDecodeError) as exc:
+        log("charter_load_failed", error=str(exc), using="inline_fallback")
+    return _CHARTER_FALLBACK
+
+
 def flatten_anthropic_content(content) -> str:
     """Claude content is either a string or a list of blocks (text / image / tool_use / tool_result).
     Flatten to a single text string. Image blocks are NOT inlined here — they're
@@ -1505,35 +1541,46 @@ async def messages(request: Request):
             # they retain enough context to be useful. Controlled by env vars:
             # CLAF_CLOUD_SYS_MAX_CHARS (default 4000), CLAF_CLOUD_MAX_MSGS (default 20).
             # Cloud preamble: always prepended before the (possibly trimmed) full
-            # system prompt. Ensures critical execution rules survive aggressive
+            # system prompt. Ensures the operational charter survives aggressive
             # sys-prompt truncation. Groq's 1500-char cap cuts into CLAUDE.md before
-            # the KNOWN PATTERNS block is reached — the model then falls back to
-            # listing skills instead of calling tools.
-            _CLOUD_PREAMBLE = (
-                "You are an MCP execution agent. Call tools immediately — no preamble.\n"
-                "KNOWN PATTERNS (call the tool now, zero questions):\n"
-                "- open tab / open mcp tab → mcp__sensei__tab_create url=https://google.com\n"
-                "- screenshot → mcp__sensei__screenshot\n"
-                "- read page / what's on screen → mcp__sensei__read_full\n"
-                "- task list / what's next → TaskList\n"
-                "- check inbox → mcp__email-bridge__check_inbox account=gmail\n"
-                "NEVER list skills. NEVER ask what skills to use. Just call the tool.\n\n"
-            )
-            _cloud_sys = _CLOUD_PREAMBLE + (system_text or "")
+            # the operating rules are reached — without this the model falls back to
+            # listing skills / asking questions instead of acting. Loaded from
+            # cloud_charter.md (tunable without code edits); inline fallback below.
+            # The charter is PROTECTED — it carries the operating rules and must
+            # never be truncated. Only the appended Claude Code system_text is
+            # trimmable. We trim system_text to (cap - charter_len) so the full
+            # charter always survives; if the charter alone exceeds the cap, send
+            # it whole and drop system_text (the rules matter more than context).
+            _charter = _load_cloud_charter()
+            _sys_tail = system_text or ""
             _cloud_msgs = _msgs
-            # Per-provider caps override global env defaults. Real Claude Code tool
-            # schemas are ~500 chars each — groq's HTTP limit is tight enough that
-            # even 30 tools + long message history triggers 413. Provider.max_sys_chars
-            # and Provider.max_msgs let each peer declare its own tolerance.
+            # Per-provider caps override global env defaults. Body size is the 413
+            # signal; with tools capped at 8, groq bodies run ~4KB (25KB headroom
+            # under its ~30KB limit) so caps can be generous. max_sys_chars here is
+            # the TOTAL system budget (charter + tail).
             _cloud_sys_max = p.max_sys_chars if p.max_sys_chars is not None \
-                else int(os.environ.get("CLAF_CLOUD_SYS_MAX_CHARS", "4000"))
+                else int(os.environ.get("CLAF_CLOUD_SYS_MAX_CHARS", "8000"))
             _cloud_msgs_max = p.max_msgs if p.max_msgs is not None \
                 else int(os.environ.get("CLAF_CLOUD_MAX_MSGS", "20"))
-            if os.environ.get("CLAF_CLOUD_TRIM", "1") != "0":
-                if len(_cloud_sys) > _cloud_sys_max:
-                    _cloud_sys = _cloud_sys[:_cloud_sys_max]
+            _trim_on = os.environ.get("CLAF_CLOUD_TRIM", "1") != "0"
+            if _trim_on:
+                _tail_budget = _cloud_sys_max - len(_charter)
+                if _tail_budget <= 0:
+                    # Charter alone fills the budget — ship it whole, drop the tail.
+                    _cloud_sys = _charter
+                    if _sys_tail:
+                        log("cloud_sys_tail_dropped", provider=p.name,
+                            charter_chars=len(_charter), tail_chars=len(_sys_tail))
+                elif len(_sys_tail) > _tail_budget:
+                    _cloud_sys = _charter + _sys_tail[:_tail_budget]
                     log("cloud_sys_trimmed", provider=p.name,
-                        chars_before=len(system_text or ""), chars_after=_cloud_sys_max)
+                        charter_chars=len(_charter),
+                        tail_before=len(_sys_tail), tail_after=_tail_budget)
+                else:
+                    _cloud_sys = _charter + _sys_tail
+            else:
+                _cloud_sys = _charter + _sys_tail
+            if _trim_on:
                 if len(_cloud_msgs) > _cloud_msgs_max:
                     _cloud_msgs = _cloud_msgs[-_cloud_msgs_max:]
                     log("cloud_msgs_trimmed", provider=p.name,

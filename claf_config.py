@@ -115,7 +115,7 @@ def _cloud_peers() -> list[Provider]:
             enabled=_env_present("GROQ_API_KEY"),
             notes="free tier, fast; rate-limited",
             max_tools=8,         # 8 high-freq sensei tools ~600 chars each in OAI fmt = ~4.8K
-            max_sys_chars=1500,  # groq has tight payload limits; match local trim level
+            max_sys_chars=6500,  # charter (~3.1K) + ~3.4K real context; body stays ~10K << 30K
             max_msgs=6,          # cap history to prevent 413 from large tool_result blocks
             max_msg_content=500, # each message trimmed to 500 chars; tool_results can be huge
         ),
