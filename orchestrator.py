@@ -481,7 +481,8 @@ def ollama_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     return blocks, bool(tool_calls)
 
 
-def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None) -> tuple[list[dict], dict, bool]:
+def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
+                max_tokens: int | None = None) -> tuple[list[dict], dict, bool]:
     """Ollama chat — local AND cloud, unified. Sends native tools when present
     (both fast-agent:latest and qwen3-coder:480b-cloud support them) and reads
     tool_calls back as Anthropic tool_use blocks. No more XML round-trip, no
@@ -489,14 +490,22 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None)
     is_cloud = getattr(provider, "pool", "") == "cloud"
     if is_cloud:
         num_ctx = int(os.environ.get("CLAF_OLLAMA_CLOUD_CTX", "32768"))
+        num_predict = max_tokens or 4096
     else:
         num_ctx = int(os.environ.get("CLAF_OLLAMA_CTX", "2048"))
+        # CRITICAL for CPU-only local: honor the client's max_tokens. A hardcoded
+        # num_predict=4096 means even "hi" can ramble to 4096 tokens; at ~5 tok/s
+        # on CPU that's ~13 MINUTES of generation per call. We respect the
+        # requested max_tokens and hard-cap it (env CLAF_LOCAL_MAX_PREDICT,
+        # default 512) so no single local turn runs away.
+        cap = int(os.environ.get("CLAF_LOCAL_MAX_PREDICT", "512"))
+        num_predict = min(max_tokens or cap, cap)
 
     payload = {
         "model": provider.model,
         "messages": messages,
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 4096, "num_ctx": num_ctx},
+        "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": num_ctx},
     }
     if tools:
         payload["tools"] = _anthropic_tools_to_ollama(tools)
@@ -607,6 +616,11 @@ def anthropic_direct_chat(provider, body: dict) -> tuple[list, dict]:
     payload["model"] = provider.model
     payload["stream"] = False
     payload.setdefault("max_tokens", 4096)
+    # Strip extended-thinking fields — adaptive/budget thinking requires specific
+    # model support. If present and unsupported, Anthropic returns 400 and we
+    # cascade through all cloud peers to slow local Qwen (~2-3 min/turn).
+    payload.pop("thinking", None)
+    payload.pop("output_config", None)
     headers = {
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
@@ -614,6 +628,13 @@ def anthropic_direct_chat(provider, body: dict) -> tuple[list, dict]:
     }
     with httpx.Client(timeout=300.0) as client:
         r = client.post(provider.url, json=payload, headers=headers)
+        if not r.is_success:
+            log("anthropic_direct_error", status=r.status_code,
+                error_body=r.text[:500],
+                payload_keys=list(payload.keys()),
+                betas=payload.get("betas"),
+                thinking_type=payload.get("thinking", {}).get("type") if isinstance(payload.get("thinking"), dict) else payload.get("thinking"),
+                tool_count=len(payload.get("tools") or []))
         r.raise_for_status()
         data = r.json()
     # Anthropic returns native content blocks (text + tool_use); pass them
@@ -1200,6 +1221,47 @@ def _do_tap_polish(body: dict, draft_text: str) -> str:
     return new_text
 
 
+# ---------------------------------------------------------------------------
+# Local prompt trimming — CPU-bound local models spend most of their wall-clock
+# on PROMPT EVAL, not generation. A full Claude Code system prompt (CLAUDE.md +
+# MEMORY + hook injections) is thousands of tokens; on a CPU-only 3B model that
+# is 1-2 minutes of eval before the first output token. The terminal feels
+# instant because `ollama run` sends almost nothing. We close that gap by
+# trimming the system prompt and history for LOCAL-pool calls only. Tool
+# definitions are passed separately (native tool-calling), so trimming the
+# system text does NOT remove agent/tool capability — qwen2.5 calls tools from
+# the `tools` param via its built-in chat template.
+# Tunables (env): CLAF_LOCAL_SYS_MAX_CHARS (default 1500),
+#                 CLAF_LOCAL_MAX_MSGS (default 10).
+# Set CLAF_LOCAL_TRIM=0 to disable entirely.
+# ---------------------------------------------------------------------------
+def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict], dict]:
+    info = {"trimmed": False}
+    if os.environ.get("CLAF_LOCAL_TRIM", "1") == "0":
+        return system_text, msgs, info
+    max_sys = int(os.environ.get("CLAF_LOCAL_SYS_MAX_CHARS", "1500"))
+    max_msgs = int(os.environ.get("CLAF_LOCAL_MAX_MSGS", "10"))
+    sys_before = len(system_text or "")
+    msgs_before = len(msgs)
+
+    if system_text and len(system_text) > max_sys:
+        # Keep the head — identity/role/standing instructions live at the top.
+        system_text = system_text[:max_sys].rstrip() + "\n[…system prompt trimmed for local speed…]"
+
+    if len(msgs) > max_msgs:
+        msgs = msgs[-max_msgs:]
+        # Don't start the window mid tool-exchange — a dangling tool_result with
+        # no matching tool_use confuses the model. Drop leading non-user turns.
+        while msgs and msgs[0].get("role") != "user":
+            msgs = msgs[1:]
+
+    if len(system_text or "") != sys_before or len(msgs) != msgs_before:
+        info = {"trimmed": True, "sys_chars_before": sys_before,
+                "sys_chars_after": len(system_text or ""),
+                "msgs_before": msgs_before, "msgs_after": len(msgs)}
+    return system_text, msgs, info
+
+
 @app.post("/v1/messages")
 async def messages(request: Request):
     body = await request.json()
@@ -1407,9 +1469,25 @@ async def messages(request: Request):
         _tools = body.get("tools")
         if p.kind == "ollama":
             _msgs = messages_from_anthropic(body.get("messages", []), flavor="ollama")
-            if system_text:
-                _msgs.insert(0, {"role": "system", "content": system_text})
-            _blocks, _usage, _tool_use = ollama_chat(p, _msgs, _tools)
+            _sys = system_text
+            _tools_eff = _tools
+            if p.pool == "local":
+                _sys, _msgs, _trim_info = _trim_for_local(_sys, _msgs)
+                if _trim_info.get("trimmed"):
+                    log("local_prompt_trimmed", **_trim_info)
+                # Cap the tools array for local. A full Claude Code request ships
+                # dozens of tool schemas (thousands of tokens) that pack the 4096
+                # context window — on a CPU 3B that is ~4 min of prompt eval per
+                # turn, even for "hi". CLAF_LOCAL_MAX_TOOLS bounds how many we send
+                # (0 = strip entirely → fast chat). Raise it when you want the
+                # local model to actually call tools.
+                _max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0"))
+                if _tools and len(_tools) > _max_tools:
+                    log("local_tools_capped", tools_before=len(_tools), tools_after=_max_tools)
+                    _tools_eff = _tools[:_max_tools] if _max_tools > 0 else None
+            if _sys:
+                _msgs.insert(0, {"role": "system", "content": _sys})
+            _blocks, _usage, _tool_use = ollama_chat(p, _msgs, _tools_eff, max_tokens=body.get("max_tokens"))
         elif p.kind == "openai_compat":
             _msgs = messages_from_anthropic(body.get("messages", []), flavor="openai")
             if system_text:
@@ -1440,7 +1518,14 @@ async def messages(request: Request):
     try:
         while True:
             try:
-                content_blocks, usage, used_react, assistant_text, tool_use = _dispatch_provider(provider)
+                # Run the BLOCKING provider call (httpx.Client → Ollama/cloud) in a
+                # worker thread. If called inline, the synchronous httpx call freezes
+                # the asyncio event loop for the entire request — so any concurrent
+                # request (a second session, /healthz, even accepting a new TCP
+                # connection) hangs until it finishes, surfacing as ConnectionRefused.
+                # asyncio.to_thread keeps the loop responsive; Ollama still serializes
+                # inference, but the proxy no longer goes dark while it works.
+                content_blocks, usage, used_react, assistant_text, tool_use = await asyncio.to_thread(_dispatch_provider, provider)
                 break  # success
             except Exception as _call_exc:
                 # Any CLOUD peer failure (429 rate-limit, 413 payload-too-large,
@@ -1552,6 +1637,22 @@ if __name__ == "__main__":
         print(f"CLAF orchestrator [SENSEI mode={MODE}] → local provider bypassed (cloud-only)")
     print(f"Listening on http://127.0.0.1:{PORT}  (set ANTHROPIC_BASE_URL=http://localhost:{PORT})")
     print(f"Log: {LOG_FILE}")
+
+    if LOCAL_MODEL and OLLAMA_URL:
+        import threading
+        def _prewarm():
+            base = OLLAMA_URL.replace("/api/chat", "")
+            try:
+                with httpx.Client(timeout=180.0) as c:
+                    c.post(f"{base}/api/generate", json={
+                        "model": LOCAL_MODEL, "prompt": "hi", "stream": False,
+                        "keep_alive": -1,
+                    })
+                print(f"[prewarm] {LOCAL_MODEL} loaded and pinned in memory (keep_alive=-1)")
+            except Exception as e:
+                print(f"[prewarm] warning: {e}")
+        threading.Thread(target=_prewarm, daemon=True).start()
+
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")
 
 
