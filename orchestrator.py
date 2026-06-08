@@ -427,7 +427,10 @@ def openai_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     OpenAI returns tool-call arguments as a JSON STRING. Returns
     (content_blocks, tool_use_bool)."""
     blocks: list[dict] = []
-    text = message.get("content") or ""
+    # Reasoning models (Cerebras gpt-oss-120b, zai-glm-4.7) put output in
+    # message.reasoning when message.content is null. Fall back to it so these
+    # providers return usable text instead of empty blocks.
+    text = message.get("content") or message.get("reasoning") or ""
     if text:
         blocks.append({"type": "text", "text": text})
     tool_calls = message.get("tool_calls") or []

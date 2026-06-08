@@ -115,14 +115,13 @@ def _cloud_peers() -> list[Provider]:
         ),
         Provider(
             tier=3, name="cerebras", pool="cloud", kind="openai_compat",
-            # Cerebras account 'ebey317' has: llama3.1-8b, zai-glm-4.7,
-            # qwen-3-235b-a22b-instruct-2507, gpt-oss-120b. 235B Qwen is the
-            # strongest available — verified by /v1/models 2026-05-22.
-            model="qwen-3-235b-a22b-instruct-2507",
+            # Cerebras account 'ebey317' as of 2026-06-08: only zai-glm-4.7 and
+            # gpt-oss-120b available. qwen-3-235b removed (was 404). Use 120B.
+            model="gpt-oss-120b",
             url="https://api.cerebras.ai/v1/chat/completions",
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
-            notes="ultra-fast inference; 235B Qwen via Cerebras",
+            notes="ultra-fast inference; gpt-oss-120b via Cerebras",
         ),
         Provider(
             tier=4, name="deepseek", pool="cloud", kind="openai_compat",
@@ -142,15 +141,14 @@ def _cloud_peers() -> list[Provider]:
         ),
         Provider(
             tier=6, name="fireworks", pool="cloud", kind="openai_compat",
-            # Fireworks account has deepseek-v4-pro (verified by /v1/models
-            # 2026-05-22). 17 models total — change if a different default
-            # is preferred.
             model="accounts/fireworks/models/deepseek-v4-pro",
             url="https://api.fireworks.ai/inference/v1/chat/completions",
             env_key="FIREWORKS_API_KEY",
-            enabled=_env_present("FIREWORKS_API_KEY"),
-            notes="DeepSeek V4 Pro via Fireworks",
-            max_tools=40,  # 412 on full payload; cap as precaution
+            # SUSPENDED 2026-06-08: account hit monthly spend limit. 412 on every
+            # request. Disable until operator resolves at fireworks.ai/account/billing.
+            enabled=False,
+            notes="SUSPENDED — monthly limit; re-enable after billing resolved",
+            max_tools=40,
         ),
         Provider(
             tier=7, name="openrouter", pool="cloud", kind="openai_compat",
