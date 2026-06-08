@@ -1541,14 +1541,27 @@ async def messages(request: Request):
                 if p.max_tools == 0:
                     _tools_eff = None
                 else:
-                    # Prioritize mcp__sensei__* and mcp__* tools; exclude claude sub-agent
-                    # tool (it's a meta-tool that causes wrong-tool cascade when included
-                    # in a small cap set).
+                    # Sort tools for cloud peers with small caps. Priority order:
+                    # 1. High-frequency sensei browser tools (by usage frequency)
+                    # 2. Other mcp__sensei__* tools
+                    # 3. Other mcp__* tools
+                    # 4. Everything else (excluding 'claude' meta-tool which causes
+                    #    wrong-tool cascade — model picks it over the right sensei tool)
                     _EXCLUDE = {"claude"}
-                    _sensei = [t for t in _tools if t.get("name", "").startswith("mcp__sensei__")]
+                    _HIGH_FREQ = [
+                        "mcp__sensei__tab_create", "mcp__sensei__screenshot",
+                        "mcp__sensei__read_full", "mcp__sensei__click",
+                        "mcp__sensei__fill", "mcp__sensei__browse",
+                        "mcp__sensei__scroll", "mcp__sensei__key_press",
+                        "mcp__sensei__read", "mcp__sensei__js_eval",
+                    ]
+                    _tool_map = {t.get("name"): t for t in _tools}
+                    _priority = [_tool_map[n] for n in _HIGH_FREQ if n in _tool_map]
+                    _priority_names = {t.get("name") for t in _priority}
+                    _sensei_rest = [t for t in _tools if t.get("name", "").startswith("mcp__sensei__") and t.get("name") not in _priority_names]
                     _other_mcp = [t for t in _tools if t.get("name", "").startswith("mcp__") and not t.get("name", "").startswith("mcp__sensei__")]
                     _rest = [t for t in _tools if not t.get("name", "").startswith("mcp__") and t.get("name") not in _EXCLUDE]
-                    _ordered = _sensei + _other_mcp + _rest
+                    _ordered = _priority + _sensei_rest + _other_mcp + _rest
                     _tools_eff = _ordered[:p.max_tools]
                 log("cloud_tools_capped", provider=p.name,
                     tools_before=len(_tools), tools_after=len(_tools_eff) if _tools_eff else 0,
