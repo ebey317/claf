@@ -206,7 +206,10 @@ def _is_hard_task(body: dict) -> bool:
       - system prompt > 40k characters (truly large agent system)
       - message count > 60 (very long conversation)
       - last message content contains `[ESCALATE]` marker
+      - active tool loop: any message contains tool_use or tool_result blocks
+        (local Qwen has CLAF_LOCAL_MAX_TOOLS=0 and can't continue a tool loop)
     """
+    import os as _os
     meta = body.get("metadata") or {}
     if meta.get("escalate") is True:
         return True
@@ -234,6 +237,18 @@ def _is_hard_task(body: dict) -> bool:
             )
         if "[ESCALATE]" in str(content):
             return True
+
+    # Active tool loop detection: escalate if any turn contains tool_use or
+    # tool_result blocks. Local Qwen has CLAF_LOCAL_MAX_TOOLS=0 and cannot
+    # continue a tool loop — routing it local silently breaks agent automation.
+    local_max_tools = int(_os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0"))
+    if local_max_tools == 0:
+        for msg in msgs:
+            c = msg.get("content", [])
+            if isinstance(c, list):
+                for blk in c:
+                    if isinstance(blk, dict) and blk.get("type") in ("tool_use", "tool_result"):
+                        return True
 
     return False
 
@@ -318,18 +333,24 @@ def _select_mode(body: dict):
     """Return ('local'|'tap'|'flash', score_dict). Pure function — does NOT
     consume throttle budget. Caller decides whether to reserve.
 
-    Cloud routing is EXPLICIT ONLY — never inferred from message content.
+    Routing waterfall (2026-05-24 operator change):
+      PRIMARY  → flash (qwen3-coder:480b-cloud, Tier 1, free SSH-signed)
+      FALLBACK → local Ollama (when Tier-1 cloud is down)
+      ESCALATE → paid Anthropic tiers (explicit only, metadata.force_cloud/escalate)
+
+    Cloud routing is FREE-FIRST. Tier-1 (Ollama Cloud) is the default target.
+    Paid cloud is EXPLICIT ONLY — force_cloud or escalate in metadata.
     Triggers:
-      - metadata.force_cloud=True  → flash (full cloud handoff)
+      - metadata.force_cloud=True  → flash (full cloud handoff, any tier)
       - metadata.escalate=True     → flash (operator-requested escalation)
-      - anything else              → local (default, no cloud spend)
+      - anything else              → flash (default, Tier-1 free cloud primary)
     """
     meta = body.get("metadata") or {}
     if meta.get("force_cloud") is True:
         return "flash", {"reason": "force_cloud_metadata"}
     if meta.get("escalate") is True:
         return "flash", {"reason": "escalate_metadata"}
-    return "local", {"reason": "default_local"}
+    return "flash", {"reason": "default_free_cloud_primary"}
 
 
 # ----------------------------------------------------------------------------
