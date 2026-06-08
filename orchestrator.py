@@ -1309,12 +1309,25 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
 @app.post("/v1/messages")
 async def messages(request: Request):
     body = await request.json()
+    _sys_probe = flatten_system(body.get("system"))
+    _msgs_probe = body.get("messages", [])
+    _last_user = ""
+    for _m in reversed(_msgs_probe):
+        if _m.get("role") == "user":
+            _c = _m.get("content")
+            _last_user = _c if isinstance(_c, str) else json.dumps(_c)
+            break
     log(
         "request_in",
         model=body.get("model"),
-        message_count=len(body.get("messages", [])),
+        message_count=len(_msgs_probe),
         has_system=bool(body.get("system")),
         stream=body.get("stream", False),
+        # Diagnostics: is the native memory + hook content actually arriving?
+        sys_chars=len(_sys_probe),
+        sys_has_claude_md=("STANDING ORDERS" in _sys_probe or "STARTUP ROUTINE" in _sys_probe),
+        sys_has_memory=("MEMORY.md" in _sys_probe or "auto-memory" in _sys_probe or "feedback_" in _sys_probe),
+        prompt_has_retry_hook=("RETRY_SCHEMA" in _last_user),
     )
 
     system_text = flatten_system(body.get("system"))
@@ -1562,7 +1575,17 @@ async def messages(request: Request):
                 else int(os.environ.get("CLAF_CLOUD_SYS_MAX_CHARS", "8000"))
             _cloud_msgs_max = p.max_msgs if p.max_msgs is not None \
                 else int(os.environ.get("CLAF_CLOUD_MAX_MSGS", "20"))
-            _trim_on = os.environ.get("CLAF_CLOUD_TRIM", "1") != "0"
+            # full_context peers (e.g. cerebras, the workhorse) get the ENTIRE
+            # natively-loaded memory + history untrimmed — charter still prepended.
+            # This is what gives the hybrid the same context the primary agent has,
+            # so the operator stops re-teaching it. Only small hard-capped peers
+            # (groq) still trim.
+            _full_ctx = getattr(p, "full_context", False)
+            _trim_on = (not _full_ctx) and os.environ.get("CLAF_CLOUD_TRIM", "1") != "0"
+            if _full_ctx:
+                log("cloud_full_context", provider=p.name,
+                    charter_chars=len(_charter), sys_tail_chars=len(_sys_tail),
+                    msg_count=len(_cloud_msgs))
             if _trim_on:
                 _tail_budget = _cloud_sys_max - len(_charter)
                 if _tail_budget <= 0:

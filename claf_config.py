@@ -64,6 +64,9 @@ class Provider:
     max_sys_chars: int | None = None      # override CLAF_CLOUD_SYS_MAX_CHARS for this peer
     max_msgs: int | None = None           # override CLAF_CLOUD_MAX_MSGS for this peer
     max_msg_content: int | None = None    # override CLAF_CLOUD_MSG_CONTENT_MAX per message
+    full_context: bool = False            # True = send FULL memory/history untrimmed
+                                          # (capable peers that tolerate large bodies).
+                                          # Charter still prepended; nothing is cut.
 
 
 def _env_present(name: str | None) -> bool:
@@ -127,7 +130,14 @@ def _cloud_peers() -> list[Provider]:
             url="https://api.cerebras.ai/v1/chat/completions",
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
-            notes="ultra-fast inference; gpt-oss-120b via Cerebras",
+            notes="ultra-fast inference; gpt-oss-120b via Cerebras. WORKHORSE peer "
+                  "(groq 429s on free tier) — gets FULL memory/history untrimmed so "
+                  "the hybrid carries the same context the operator's primary agent has.",
+            # 120B model + Cerebras tolerates large bodies (115KB observed). Send
+            # the full natively-loaded memory (CLAUDE.md + MEMORY.md + ⚠️/⚡ memories
+            # injected by userpromptsubmit_inject.sh) WITHOUT trimming. This is what
+            # makes the hybrid stop needing re-teaching.
+            full_context=True,
         ),
         Provider(
             tier=4, name="deepseek", pool="cloud", kind="openai_compat",
