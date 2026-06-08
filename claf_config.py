@@ -60,9 +60,10 @@ class Provider:
     env_key: str | None      # env var holding the auth token; None for local
     enabled: bool            # gated by env-key presence (always True for local)
     notes: str = ""
-    max_tools: int | None = None     # cap tools array before sending; None = no cap
-    max_sys_chars: int | None = None # override CLAF_CLOUD_SYS_MAX_CHARS for this peer
-    max_msgs: int | None = None      # override CLAF_CLOUD_MAX_MSGS for this peer
+    max_tools: int | None = None          # cap tools array before sending; None = no cap
+    max_sys_chars: int | None = None      # override CLAF_CLOUD_SYS_MAX_CHARS for this peer
+    max_msgs: int | None = None           # override CLAF_CLOUD_MAX_MSGS for this peer
+    max_msg_content: int | None = None    # override CLAF_CLOUD_MSG_CONTENT_MAX per message
 
 
 def _env_present(name: str | None) -> bool:
@@ -113,9 +114,10 @@ def _cloud_peers() -> list[Provider]:
             env_key="GROQ_API_KEY",
             enabled=_env_present("GROQ_API_KEY"),
             notes="free tier, fast; rate-limited",
-            max_tools=10,       # real tool schemas ~500 chars each; 10 keeps well under HTTP limit
-            max_sys_chars=1500, # groq has tight payload limits; match local trim level
-            max_msgs=6,         # cap history to prevent 413 from large tool_result blocks
+            max_tools=5,         # real Claude Code schemas ~1200 chars each; 5 = ~6K tool bytes
+            max_sys_chars=1500,  # groq has tight payload limits; match local trim level
+            max_msgs=6,          # cap history to prevent 413 from large tool_result blocks
+            max_msg_content=500, # each message trimmed to 500 chars; tool_results can be huge
         ),
         Provider(
             tier=3, name="cerebras", pool="cloud", kind="openai_compat",

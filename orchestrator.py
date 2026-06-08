@@ -1521,7 +1521,8 @@ async def messages(request: Request):
                 # Cap per-message content. A single tool_result (file read,
                 # bash output) can be 10K+ chars — enough to 413 groq even after
                 # count and system trimming. Truncate each message's string content.
-                _msg_content_max = int(os.environ.get("CLAF_CLOUD_MSG_CONTENT_MAX", "2000"))
+                _msg_content_max = p.max_msg_content if p.max_msg_content is not None \
+                    else int(os.environ.get("CLAF_CLOUD_MSG_CONTENT_MAX", "2000"))
                 _trimmed_content = False
                 _cloud_msgs_final = []
                 for _m in _cloud_msgs:
@@ -1537,9 +1538,21 @@ async def messages(request: Request):
                 _cloud_msgs = [{"role": "system", "content": _cloud_sys}] + _cloud_msgs
             _tools_eff = _tools
             if _tools and p.max_tools is not None and len(_tools) > p.max_tools:
+                if p.max_tools == 0:
+                    _tools_eff = None
+                else:
+                    # Prioritize mcp__sensei__* and mcp__* tools; exclude claude sub-agent
+                    # tool (it's a meta-tool that causes wrong-tool cascade when included
+                    # in a small cap set).
+                    _EXCLUDE = {"claude"}
+                    _sensei = [t for t in _tools if t.get("name", "").startswith("mcp__sensei__")]
+                    _other_mcp = [t for t in _tools if t.get("name", "").startswith("mcp__") and not t.get("name", "").startswith("mcp__sensei__")]
+                    _rest = [t for t in _tools if not t.get("name", "").startswith("mcp__") and t.get("name") not in _EXCLUDE]
+                    _ordered = _sensei + _other_mcp + _rest
+                    _tools_eff = _ordered[:p.max_tools]
                 log("cloud_tools_capped", provider=p.name,
-                    tools_before=len(_tools), tools_after=p.max_tools)
-                _tools_eff = _tools[:p.max_tools] if p.max_tools > 0 else None
+                    tools_before=len(_tools), tools_after=len(_tools_eff) if _tools_eff else 0,
+                    first_tools=[t.get("name") for t in (_tools_eff or [])][:5])
             _blocks, _usage, _tool_use = openai_compat_chat(p, _cloud_msgs, _tools_eff)
         elif p.kind == "anthropic":
             _blocks, _usage = anthropic_direct_chat(p, body)
