@@ -25,10 +25,17 @@ fi
 
 export ANTHROPIC_BASE_URL="$PROXY_URL"
 export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-sk-claf-local-dummy}"
+# Critical: never let an API key leak into the client when routing through CLAF.
+# CLAF loads cloud-peer keys from ~/.master_ai_keys internally when it needs them.
+unset ANTHROPIC_API_KEY
 
 echo "ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"
-echo "Launching: claude --chrome --strict-mcp-config"
+echo "Launching: claude --chrome"
 echo "(Ctrl+C to exit. Real Anthropic is one fresh terminal away.)"
 echo
 
-exec claude --chrome --strict-mcp-config
+# NOTE: do NOT use --strict-mcp-config here. Strict mode ignores ~/.claude.json
+# and only loads servers passed via --mcp-config. With none passed that means
+# ZERO MCP servers (sensei, email-bridge vanish). Plain --chrome loads the
+# normal MCP config so sensei is available in the hybrid session.
+exec claude --chrome

@@ -301,7 +301,9 @@ def anthropic_to_ollama_messages(claude_messages: list) -> list[dict]:
 
 
 def _anthropic_tools_to_ollama(tools: list[dict]) -> list[dict]:
-    """Convert Anthropic tool schema to Ollama native tool format."""
+    """Convert Anthropic tool schema to Ollama/OpenAI native tool format.
+    Ollama and OpenAI use the identical {type:function, function:{name,
+    description, parameters}} schema, so this serves both paths."""
     out = []
     for t in (tools or []):
         schema = t.get("input_schema") or {}
@@ -314,6 +316,169 @@ def _anthropic_tools_to_ollama(tools: list[dict]) -> list[dict]:
             },
         })
     return out
+
+
+def messages_from_anthropic(claude_messages: list, flavor: str = "openai") -> list[dict]:
+    """Convert Anthropic messages to OpenAI- or Ollama-flavored messages,
+    PRESERVING tool_use / tool_result structure so multi-turn tool loops work.
+
+    The old flatten_anthropic_content() path turned past tool calls into prose
+    ("[Tool call: ...]"), so on turn 2 of any agent loop the model lost the
+    thread. This keeps the structure native.
+
+    flavor="openai": assistant tool calls →
+        {role:assistant, content:<text|None>, tool_calls:[{id, type:function,
+         function:{name, arguments:<JSON string>}}]}
+        tool results → {role:tool, tool_call_id, content}
+        The assistant tool_calls[].id MUST equal the later tool message's
+        tool_call_id — we preserve the Anthropic tool_use.id end-to-end.
+    flavor="ollama": assistant tool calls → {role:assistant, content,
+        tool_calls:[{function:{name, arguments:<dict>}}]}; tool results →
+        {role:tool, content} (Ollama matches by order). Images preserved via
+        the per-message 'images' array.
+    """
+    out: list[dict] = []
+    for m in claude_messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+
+        if isinstance(content, str):
+            r = role if role in ("user", "assistant") else "user"
+            out.append({"role": r, "content": content})
+            continue
+        if not isinstance(content, list):
+            out.append({"role": "user", "content": str(content)})
+            continue
+
+        text_parts: list[str] = []
+        tool_use_blocks: list[dict] = []
+        tool_result_blocks: list[dict] = []
+        images: list[str] = []
+        for b in content:
+            if not isinstance(b, dict):
+                text_parts.append(str(b))
+                continue
+            bt = b.get("type")
+            if bt == "text":
+                text_parts.append(b.get("text", ""))
+            elif bt == "tool_use":
+                tool_use_blocks.append(b)
+            elif bt == "tool_result":
+                tool_result_blocks.append(b)
+            elif bt == "image":
+                src = b.get("source", {}) or {}
+                if src.get("type") == "base64" and src.get("data"):
+                    images.append(src["data"])
+        text_joined = "\n".join(p for p in text_parts if p)
+
+        # tool_result blocks → tool-role messages (one per result).
+        if tool_result_blocks:
+            for tr in tool_result_blocks:
+                inner = tr.get("content", "")
+                if isinstance(inner, list):
+                    inner = "\n".join(
+                        x.get("text", "") if isinstance(x, dict) else str(x)
+                        for x in inner
+                    )
+                if flavor == "openai":
+                    out.append({"role": "tool",
+                                "tool_call_id": tr.get("tool_use_id", ""),
+                                "content": inner or ""})
+                else:
+                    out.append({"role": "tool", "content": inner or ""})
+            if text_joined:
+                tmsg = {"role": "user", "content": text_joined}
+                if images and flavor == "ollama":
+                    tmsg["images"] = images
+                out.append(tmsg)
+            continue
+
+        # assistant message carrying tool_use → native tool_calls.
+        if tool_use_blocks and role == "assistant":
+            if flavor == "openai":
+                tcs = [{"id": tu.get("id", ""),
+                        "type": "function",
+                        "function": {"name": tu.get("name", ""),
+                                     "arguments": json.dumps(tu.get("input", {}))}}
+                       for tu in tool_use_blocks]
+                out.append({"role": "assistant",
+                            "content": text_joined or None,
+                            "tool_calls": tcs})
+            else:
+                tcs = [{"function": {"name": tu.get("name", ""),
+                                     "arguments": tu.get("input", {})}}
+                       for tu in tool_use_blocks]
+                out.append({"role": "assistant",
+                            "content": text_joined or "",
+                            "tool_calls": tcs})
+            continue
+
+        # Plain message (text, maybe images).
+        r = role if role in ("user", "assistant") else "user"
+        pmsg = {"role": r, "content": text_joined}
+        if images and flavor == "ollama":
+            pmsg["images"] = images
+        out.append(pmsg)
+    return out
+
+
+def openai_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
+    """OpenAI choices[0].message → Anthropic content blocks.
+    OpenAI returns tool-call arguments as a JSON STRING. Returns
+    (content_blocks, tool_use_bool)."""
+    blocks: list[dict] = []
+    text = message.get("content") or ""
+    if text:
+        blocks.append({"type": "text", "text": text})
+    tool_calls = message.get("tool_calls") or []
+    for tc in tool_calls:
+        fn = tc.get("function", {}) or {}
+        raw_args = fn.get("arguments", "{}")
+        if isinstance(raw_args, str):
+            try:
+                args = json.loads(raw_args) if raw_args.strip() else {}
+            except Exception:
+                args = {}
+        else:
+            args = raw_args or {}
+        blocks.append({
+            "type": "tool_use",
+            "id": tc.get("id") or f"toolu_claf_{uuid.uuid4().hex[:24]}",
+            "name": fn.get("name", ""),
+            "input": args,
+        })
+    if not blocks:
+        blocks = [{"type": "text", "text": ""}]
+    return blocks, bool(tool_calls)
+
+
+def ollama_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
+    """Ollama message → Anthropic content blocks.
+    Ollama returns tool-call arguments as a DICT (not a string)."""
+    blocks: list[dict] = []
+    text = message.get("content") or ""
+    if text:
+        blocks.append({"type": "text", "text": text})
+    tool_calls = message.get("tool_calls") or []
+    for tc in tool_calls:
+        fn = tc.get("function", {}) or {}
+        args = fn.get("arguments")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args) if args.strip() else {}
+            except Exception:
+                args = {}
+        elif not isinstance(args, dict):
+            args = {}
+        blocks.append({
+            "type": "tool_use",
+            "id": tc.get("id") or f"toolu_claf_{uuid.uuid4().hex[:24]}",
+            "name": fn.get("name", ""),
+            "input": args,
+        })
+    if not blocks:
+        blocks = [{"type": "text", "text": ""}]
+    return blocks, bool(tool_calls)
 
 
 def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None) -> tuple[str, dict, bool]:
@@ -1291,24 +1456,44 @@ async def messages(request: Request):
                 content_blocks, usage, used_react, assistant_text, tool_use = _dispatch_provider(provider)
                 break  # success
             except Exception as _call_exc:
-                # Check for HTTP 429 on cloud providers only — local Ollama
-                # failures are not rate-limit events and should surface immediately.
-                is_rate_limit = (
-                    provider.pool == "cloud"
-                    and hasattr(_call_exc, "response")
-                    and getattr(_call_exc.response, "status_code", None) == 429
-                )
-                if not is_rate_limit:
-                    raise  # re-raise non-429 errors immediately
+                # Any CLOUD peer failure (429 rate-limit, 413 payload-too-large,
+                # 5xx, timeout, etc.) advances the fallback chain — the next peer
+                # or local Ollama may succeed. LOCAL Ollama failures are terminal
+                # and surface immediately (nothing left to fall back to).
+                _status = getattr(getattr(_call_exc, "response", None), "status_code", None)
+                is_cloud_failure = provider.pool == "cloud"
+                if not is_cloud_failure:
+                    raise  # local failure — surface immediately
                 _rate_limit_failed.add(provider.name)
-                log("rate_limit_fallback", failed_provider=provider.name,
-                    failed_tier=provider.tier, failed_so_far=sorted(_rate_limit_failed))
+                log("cloud_peer_fallback", failed_provider=provider.name,
+                    failed_tier=provider.tier, status=_status,
+                    failed_so_far=sorted(_rate_limit_failed))
                 provider = next_cloud_peer(_rate_limit_failed)
                 if provider is None:
-                    raise RuntimeError(
-                        f"all cloud peers rate-limited: {sorted(_rate_limit_failed)}"
-                    ) from _call_exc
-                log("rate_limit_next_peer", next_provider=provider.name, next_tier=provider.tier)
+                    # No more cloud peers. In hybrid/local mode, degrade to the
+                    # LOCAL Ollama provider — it never rate-limits and is the
+                    # whole point of hybrid. Only error out if no local exists
+                    # (cloud-only mode).
+                    _local = next(
+                        (p for p in PROVIDERS if p.pool == "local" and p.enabled),
+                        None,
+                    )
+                    if _local is not None:
+                        provider = _local
+                        if trickle_reservation:
+                            throttle.refund(trickle_reservation)
+                            trickle_reservation = None
+                        trickle_mode = "local"
+                        log("rate_limit_degraded_to_local",
+                            failed_peers=sorted(_rate_limit_failed),
+                            local_provider=_local.name)
+                    else:
+                        raise RuntimeError(
+                            f"all cloud peers rate-limited and no local fallback: "
+                            f"{sorted(_rate_limit_failed)}"
+                        ) from _call_exc
+                else:
+                    log("rate_limit_next_peer", next_provider=provider.name, next_tier=provider.tier)
     except Exception as e:
         log("provider_error", tier=getattr(provider, 'tier', None),
             name=getattr(provider, 'name', 'unknown'), error=str(e),
@@ -1352,8 +1537,8 @@ async def messages(request: Request):
     response = wrap_anthropic_response(requested_model, content_blocks, usage, tool_use)
     log(
         "response_out",
-        tier=provider.tier,
-        name=provider.name,
+        tier=getattr(provider, 'tier', None),
+        name=getattr(provider, 'name', 'unknown'),
         out_chars=len(assistant_text),
         tool_use=tool_use,
         tool_use_count=sum(1 for b in content_blocks if b.get("type") == "tool_use"),
