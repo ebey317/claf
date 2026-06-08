@@ -1501,8 +1501,14 @@ async def messages(request: Request):
             # CLAF_CLOUD_SYS_MAX_CHARS (default 4000), CLAF_CLOUD_MAX_MSGS (default 20).
             _cloud_sys = system_text or ""
             _cloud_msgs = _msgs
-            _cloud_sys_max = int(os.environ.get("CLAF_CLOUD_SYS_MAX_CHARS", "4000"))
-            _cloud_msgs_max = int(os.environ.get("CLAF_CLOUD_MAX_MSGS", "20"))
+            # Per-provider caps override global env defaults. Real Claude Code tool
+            # schemas are ~500 chars each — groq's HTTP limit is tight enough that
+            # even 30 tools + long message history triggers 413. Provider.max_sys_chars
+            # and Provider.max_msgs let each peer declare its own tolerance.
+            _cloud_sys_max = p.max_sys_chars if p.max_sys_chars is not None \
+                else int(os.environ.get("CLAF_CLOUD_SYS_MAX_CHARS", "4000"))
+            _cloud_msgs_max = p.max_msgs if p.max_msgs is not None \
+                else int(os.environ.get("CLAF_CLOUD_MAX_MSGS", "20"))
             if os.environ.get("CLAF_CLOUD_TRIM", "1") != "0":
                 if len(_cloud_sys) > _cloud_sys_max:
                     _cloud_sys = _cloud_sys[:_cloud_sys_max]
