@@ -1492,7 +1492,12 @@ async def messages(request: Request):
             _msgs = messages_from_anthropic(body.get("messages", []), flavor="openai")
             if system_text:
                 _msgs.insert(0, {"role": "system", "content": system_text})
-            _blocks, _usage, _tool_use = openai_compat_chat(p, _msgs, _tools)
+            _tools_eff = _tools
+            if _tools and p.max_tools is not None and len(_tools) > p.max_tools:
+                log("cloud_tools_capped", provider=p.name,
+                    tools_before=len(_tools), tools_after=p.max_tools)
+                _tools_eff = _tools[:p.max_tools] if p.max_tools > 0 else None
+            _blocks, _usage, _tool_use = openai_compat_chat(p, _msgs, _tools_eff)
         elif p.kind == "anthropic":
             _blocks, _usage = anthropic_direct_chat(p, body)
             _tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in _blocks)

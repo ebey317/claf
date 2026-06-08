@@ -60,6 +60,7 @@ class Provider:
     env_key: str | None      # env var holding the auth token; None for local
     enabled: bool            # gated by env-key presence (always True for local)
     notes: str = ""
+    max_tools: int | None = None  # cap tools array before sending; None = no cap
 
 
 def _env_present(name: str | None) -> bool:
@@ -110,6 +111,7 @@ def _cloud_peers() -> list[Provider]:
             env_key="GROQ_API_KEY",
             enabled=_env_present("GROQ_API_KEY"),
             notes="free tier, fast; rate-limited",
+            max_tools=30,  # 74 tools → HTTP 413; 30 keeps payload under limit
         ),
         Provider(
             tier=3, name="cerebras", pool="cloud", kind="openai_compat",
@@ -148,6 +150,7 @@ def _cloud_peers() -> list[Provider]:
             env_key="FIREWORKS_API_KEY",
             enabled=_env_present("FIREWORKS_API_KEY"),
             notes="DeepSeek V4 Pro via Fireworks",
+            max_tools=40,  # 412 on full payload; cap as precaution
         ),
         Provider(
             tier=7, name="openrouter", pool="cloud", kind="openai_compat",
