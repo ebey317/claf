@@ -578,6 +578,11 @@ def openai_compat_chat(provider, messages: list[dict], tools: list[dict] | None 
         payload["tools"] = _anthropic_tools_to_ollama(tools)  # OpenAI == Ollama tool schema
         payload["tool_choice"] = "auto"
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    # Body size is the 413 signal — log it so payload-too-large is diagnosable
+    # without guessing. Cloud free tiers (groq ~30KB) reject oversized bodies.
+    _body_bytes = len(json.dumps(payload).encode("utf-8"))
+    log("cloud_request_size", provider=provider.name, body_bytes=_body_bytes,
+        tool_count=len(tools) if tools else 0, msg_count=len(messages))
     with httpx.Client(timeout=120.0) as client:
         r = client.post(provider.url, json=payload, headers=headers)
         r.raise_for_status()
