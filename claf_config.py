@@ -350,24 +350,26 @@ def _select_mode(body: dict):
     """Return ('local'|'tap'|'flash', score_dict). Pure function — does NOT
     consume throttle budget. Caller decides whether to reserve.
 
-    Routing waterfall (2026-05-24 operator change):
-      PRIMARY  → flash (qwen3-coder:480b-cloud, Tier 1, free SSH-signed)
-      FALLBACK → local Ollama (when Tier-1 cloud is down)
-      ESCALATE → paid Anthropic tiers (explicit only, metadata.force_cloud/escalate)
+    Routing waterfall (2026-06-08 fix: local first, cloud only on signal):
+      PRIMARY  → local Ollama (fast, free, reliable)
+      ESCALATE → flash/tap only on hard-task signal or explicit metadata
+      FALLBACK → local Ollama (when cloud is down or rate-limited)
 
-    Cloud routing is FREE-FIRST. Tier-1 (Ollama Cloud) is the default target.
-    Paid cloud is EXPLICIT ONLY — force_cloud or escalate in metadata.
+    Off-grid is the architecture. Cloud is convenience, not load-bearing.
     Triggers:
       - metadata.force_cloud=True  → flash (full cloud handoff, any tier)
       - metadata.escalate=True     → flash (operator-requested escalation)
-      - anything else              → flash (default, Tier-1 free cloud primary)
+      - hard task (_is_hard_task)  → flash (auto-escalation)
+      - anything else              → local (default, fast, free)
     """
     meta = body.get("metadata") or {}
     if meta.get("force_cloud") is True:
         return "flash", {"reason": "force_cloud_metadata"}
     if meta.get("escalate") is True:
         return "flash", {"reason": "escalate_metadata"}
-    return "flash", {"reason": "default_free_cloud_primary"}
+    if _is_hard_task(body):
+        return "flash", {"reason": "hard_task_auto_escalate"}
+    return "local", {"reason": "default_local_first"}
 
 
 # ----------------------------------------------------------------------------

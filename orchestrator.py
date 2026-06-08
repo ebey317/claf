@@ -153,6 +153,12 @@ import claf_throttle as throttle
 import contextlib
 import threading
 
+try:
+    from orchestrator_action_bridge import execute_actions_in_text
+    HAS_ACTION_BRIDGE = True
+except Exception:
+    HAS_ACTION_BRIDGE = False
+
 # Serialize cloud Ollama requests — concurrent calls to the SSH-tunneled cloud
 # model cause 500s. One in-flight at a time; others queue and wait.
 _OLLAMA_CLOUD_LOCK = threading.Lock()
@@ -249,6 +255,52 @@ def _load_cloud_charter() -> str:
     except (OSError, UnicodeDecodeError) as exc:
         log("charter_load_failed", error=str(exc), using="inline_fallback")
     return _CHARTER_FALLBACK
+
+
+# FULL MEMORY PACK — the complete memory corpus (every *.md file, full bodies)
+# injected into full_context peers so the hybrid KNOWS the operator the same way
+# the primary agent does. The memory is what makes it personal; a subset is not
+# enough. Loaded from the memory dir, cached by newest-mtime so edits to any
+# memory file refresh the pack on the next request (no restart).
+_MEMORY_DIR = Path(os.environ.get(
+    "CLAF_MEMORY_DIR",
+    str(Path.home() / ".claude/projects/-home-elijah/memory"),
+))
+_memory_cache: dict = {"sig": None, "text": None}
+
+
+def _load_memory_pack() -> str:
+    """Concatenate EVERY memory .md file (full body) into one pack, with a header
+    per file so the model can cite which memory a fact came from. Cached by a
+    signature of (file, mtime, size) across the dir so any edit refreshes it.
+    Returns '' if the dir is missing/empty — never raises into the request path."""
+    try:
+        files = sorted(_MEMORY_DIR.glob("*.md"))
+        if not files:
+            return ""
+        sig = tuple((f.name, f.stat().st_mtime, f.stat().st_size) for f in files)
+        if _memory_cache["sig"] == sig and _memory_cache["text"]:
+            return _memory_cache["text"]
+        parts = [
+            "===== FULL MEMORY CORPUS — this is what you KNOW about the operator. "
+            "Treat every fact here as something you already know. =====\n"
+        ]
+        for f in files:
+            try:
+                body = f.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                continue
+            if body:
+                parts.append(f"\n----- memory: {f.name} -----\n{body}\n")
+        parts.append("\n===== END MEMORY CORPUS =====\n\n")
+        pack = "".join(parts)
+        _memory_cache["sig"] = sig
+        _memory_cache["text"] = pack
+        log("memory_pack_built", files=len(files), chars=len(pack))
+        return pack
+    except OSError as exc:
+        log("memory_pack_failed", error=str(exc))
+        return ""
 
 
 def flatten_anthropic_content(content) -> str:
@@ -1014,6 +1066,73 @@ def wrap_anthropic_response(model_id: str, content_blocks: list, usage: dict, to
     }
 
 
+
+# ─── OpenAI-compatible conversion helpers ────────────────────────────────────
+
+def _openai_tools_to_anthropic(tools: list) -> list:
+    out = []
+    for t in tools or []:
+        fn = t.get("function", {}) or {}
+        out.append({
+            "name": fn.get("name", ""),
+            "description": fn.get("description", ""),
+            "input_schema": fn.get("parameters", {}) or {},
+        })
+    return out
+
+
+def _openai_to_anthropic(body: dict) -> dict:
+    return {
+        "model": body.get("model", "claude-sonnet-4-6"),
+        "messages": body.get("messages", []),
+        "tools": _openai_tools_to_anthropic(body.get("tools")),
+        "max_tokens": body.get("max_tokens", 1024),
+        "stream": body.get("stream", False),
+        "system": body.get("system", ""),
+    }
+
+
+def _anthropic_to_openai(anthropic_resp: dict, model: str) -> dict:
+    content_blocks = anthropic_resp.get("content", []) or []
+    text_parts = []
+    tool_calls = []
+    for b in content_blocks:
+        if isinstance(b, dict) and b.get("type") == "text":
+            text_parts.append(b.get("text", ""))
+        elif isinstance(b, dict) and b.get("type") == "tool_use":
+            tool_calls.append({
+                "id": b.get("id", ""),
+                "type": "function",
+                "function": {
+                    "name": b.get("name", ""),
+                    "arguments": json.dumps(b.get("input", {}) or {}),
+                },
+            })
+    text = "".join(text_parts)
+    stop_reason = anthropic_resp.get("stop_reason", "end_turn")
+    finish_reason = "stop" if stop_reason == "end_turn" else "tool_calls" if stop_reason == "tool_use" else stop_reason
+    usage = anthropic_resp.get("usage", {}) or {}
+    return {
+        "id": f"chatcmpl_{uuid.uuid4().hex[:24]}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": text or None,
+                "tool_calls": tool_calls if tool_calls else None,
+            },
+            "finish_reason": finish_reason,
+        }],
+        "usage": {
+            "prompt_tokens": usage.get("input_tokens", 0),
+            "completion_tokens": usage.get("output_tokens", 0),
+            "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+        },
+    }
+
 @app.get("/")
 def root():
     return {"name": "claf-orchestrator", "version": "0.4.0", "local_model": LOCAL_MODEL, "mode": MODE}
@@ -1111,6 +1230,59 @@ def list_models():
             ),
             "created_at": "2026-05-19T00:00:00Z",
         })
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(request: Request):
+    body = await request.json()
+    requested_model = body.get("model", "claude-sonnet-4-6")
+
+    # Convert OpenAI format → Anthropic format
+    anthropic_body = _openai_to_anthropic(body)
+
+    # Select provider using the same logic
+    provider = select_provider(anthropic_body)
+
+    # Build messages
+    system_text = flatten_system(anthropic_body.get("system"))
+    _msgs = messages_from_anthropic(anthropic_body.get("messages", []), flavor="ollama" if provider.kind == "ollama" else "openai")
+    if system_text:
+        _msgs.insert(0, {"role": "system", "content": system_text})
+
+    tools = anthropic_body.get("tools")
+    max_tokens = anthropic_body.get("max_tokens", 1024)
+
+    try:
+        if provider.kind == "ollama":
+            _blocks, _usage, _tool_use = ollama_chat(provider, _msgs, tools, max_tokens=max_tokens)
+        elif provider.kind == "openai_compat":
+            _blocks, _usage, _tool_use = openai_compat_chat(provider, _msgs, tools)
+        elif provider.kind == "anthropic":
+            _blocks, _usage = anthropic_direct_chat(provider, anthropic_body)
+            _tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in _blocks)
+        else:
+            raise RuntimeError(f"unknown provider kind: {provider.kind}")
+
+        # Action bridge: auto-execute directives in text responses
+        if HAS_ACTION_BRIDGE and not _tool_use:
+            _text = "".join(b.get("text", "") for b in _blocks if isinstance(b, dict) and b.get("type") == "text")
+            if _text:
+                _new_text = execute_actions_in_text(_text)
+                if _new_text != _text:
+                    # Replace the text block with the augmented version
+                    _blocks = [{"type": "text", "text": _new_text}] + [b for b in _blocks if not (isinstance(b, dict) and b.get("type") == "text")]
+
+        anthropic_resp = wrap_anthropic_response(requested_model, _blocks, _usage, _tool_use)
+    except Exception as e:
+        log("openai_endpoint_error", error=str(e))
+        return JSONResponse(
+            status_code=502,
+            content={"error": {"type": "api_error", "message": str(e)}},
+        )
+
+    openai_resp = _anthropic_to_openai(anthropic_resp, requested_model)
+    return openai_resp
+
     return {"data": data}
 
 
@@ -1582,9 +1754,17 @@ async def messages(request: Request):
             # (groq) still trim.
             _full_ctx = getattr(p, "full_context", False)
             _trim_on = (not _full_ctx) and os.environ.get("CLAF_CLOUD_TRIM", "1") != "0"
+            # full_context peers get the COMPLETE memory corpus prepended (after the
+            # charter). The memory is what makes the hybrid KNOW the operator — a
+            # subset is not enough. The charter teaches HOW to act; the memory pack
+            # is WHO it's working for and everything it has learned.
+            _mem_pack = _load_memory_pack() if _full_ctx else ""
             if _full_ctx:
+                _charter = _charter + _mem_pack
                 log("cloud_full_context", provider=p.name,
-                    charter_chars=len(_charter), sys_tail_chars=len(_sys_tail),
+                    charter_chars=len(_charter) - len(_mem_pack),
+                    memory_pack_chars=len(_mem_pack),
+                    sys_tail_chars=len(_sys_tail),
                     msg_count=len(_cloud_msgs))
             if _trim_on:
                 _tail_budget = _cloud_sys_max - len(_charter)
@@ -1639,6 +1819,11 @@ async def messages(request: Request):
                     #    wrong-tool cascade — model picks it over the right sensei tool)
                     _EXCLUDE = {"claude"}
                     _HIGH_FREQ = [
+                        # Task tools FIRST — the operator runs the task-list loop
+                        # constantly; these must never be capped out ("looking for
+                        # task list tool" bug).
+                        "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
+                        # High-frequency sensei browser tools.
                         "mcp__sensei__tab_create", "mcp__sensei__screenshot",
                         "mcp__sensei__read_full", "mcp__sensei__click",
                         "mcp__sensei__fill", "mcp__sensei__browse",
@@ -1677,6 +1862,15 @@ async def messages(request: Request):
                     _blocks, _tool_use = _scraped, True
         _text = "".join(b.get("text", "") for b in _blocks
                         if isinstance(b, dict) and b.get("type") == "text")
+
+        # Action bridge: auto-execute BROWSE:/SHELL:/FILE: directives in raw text
+        if HAS_ACTION_BRIDGE and _text:
+            _new_text = execute_actions_in_text(_text)
+            if _new_text != _text:
+                # Rebuild blocks with augmented text
+                _blocks = [{"type": "text", "text": _new_text}] + [b for b in _blocks if not (isinstance(b, dict) and b.get("type") == "text")]
+                _text = _new_text
+
         return _blocks, _usage, False, _text, _tool_use
 
     try:

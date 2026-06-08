@@ -8,6 +8,7 @@ Autonomous task loop uses CLAF as LLM gateway + Sensei bridge for actions.
 SQLite state at ~/projects/claf/secretary.db.
 """
 
+import argparse
 import hashlib
 import json
 import os
@@ -34,7 +35,28 @@ HTTP_PORT = int(os.environ.get("SECRETARY_HTTP_PORT", "8001"))
 MAX_TURNS = int(os.environ.get("SECRETARY_MAX_TURNS", "20"))
 MAX_RETRY_STEPS = int(os.environ.get("SECRETARY_MAX_RETRY", "3"))
 RETRY_DELAYS = [1, 2, 4, 8, 8]
-BRIDGE_WAIT = 8
+BRIDGE_WAIT = 60
+BRIDGE_SESSION = os.environ.get("BRIDGE_SESSION", "mcp-default")
+LOG_PATH = os.environ.get("SECRETARY_LOG", str(_HERE / "secretary.log"))
+
+# Mirror stderr to log file so debug is visible outside the MCP subprocess pipe.
+try:
+    _log_file = open(LOG_PATH, "a", buffering=1)
+    _orig_stderr = sys.stderr
+
+    class _Tee:
+        def write(self, s):
+            _orig_stderr.write(s)
+            _log_file.write(s)
+        def flush(self):
+            _orig_stderr.flush()
+            _log_file.flush()
+        def __getattr__(self, name):
+            return getattr(_orig_stderr, name)
+
+    sys.stderr = _Tee()
+except Exception:
+    pass
 
 # ─── DB init ──────────────────────────────────────────────────────────────────
 
@@ -126,7 +148,7 @@ def _task_create(goal: str, session: str, profile: str = "full") -> dict:
     conn.execute(
         "INSERT INTO tasks (task_id, goal, status, session, created_ts, updated_ts, profile) "
         "VALUES (?,?,?,?,?,?,?)",
-        (task_id, goal, "queued", session or "default", ts, ts, profile),
+        (task_id, goal, "queued", session or BRIDGE_SESSION, ts, ts, profile),
     )
     _event(conn, task_id, "created", {"goal": goal, "profile": profile})
     conn.commit()
@@ -274,7 +296,13 @@ def _claf_alive() -> bool:
     return bool(r.get("ok"))
 
 
+def _log(msg: str):
+    sys.stderr.write(f"[secretary] {msg}\n")
+    sys.stderr.flush()
+
+
 def _push_action(kind: str, payload: dict, session: str) -> dict:
+    _log(f"bridge push {kind} session={session} payload={json.dumps(payload)[:120]}")
     body = {"session_id": session, "actions": [{"kind": kind, **payload}]}
     return _http("POST", f"{BRIDGE_URL}/extension/queue", body=body, timeout=3.0)
 
@@ -282,6 +310,7 @@ def _push_action(kind: str, payload: dict, session: str) -> dict:
 def _await_result(action_id: str, session: str, wait: int = BRIDGE_WAIT) -> dict:
     if not action_id:
         return {"ok": False, "reason": "no_action_id"}
+    _log(f"await result action_id={action_id} timeout={wait}s")
     deadline = time.time() + wait
     while time.time() < deadline:
         r = _http(
@@ -291,9 +320,13 @@ def _await_result(action_id: str, session: str, wait: int = BRIDGE_WAIT) -> dict
         )
         if r.get("ok") and r.get("json"):
             j = r["json"]
-            if j.get("ready") or j.get("result") or j.get("action_id"):
+            # Only return when bridge confirms the action is done (ok:true + result present).
+            # Pending responses also include action_id so we can't use that as the signal.
+            if j.get("ok") and j.get("result") is not None:
+                _log(f"result received action_id={action_id} verdict={j.get('result',{}).get('verdict','?')}")
                 return j
         time.sleep(0.4)
+    _log(f"await timeout action_id={action_id}")
     return {"ok": False, "reason": "timeout"}
 
 
@@ -348,7 +381,7 @@ def _exec_tool(name: str, args: dict, session: str) -> str:
         if name == "browser_read":
             r = _dispatch_browser("BROWSER_READ_PAGE", {}, session)
             rep = json.dumps(r)
-            return rep[:800] + (" ...[truncated]" if len(rep) > 800 else "")
+            return rep[:2500] + (" ...[truncated]" if len(rep) > 2500 else "")
 
         if name == "web_search":
             query = str(args.get("query", "")).strip()
@@ -502,6 +535,7 @@ def _run_loop(task_id: str, goal: str, session: str, worker_id: str, profile: st
     step_history = []
 
     try:
+        _log(f"task start task_id={task_id} profile={profile} goal={goal[:80]}")
         _task_set_status(task_id, "executing")
 
         while turn < MAX_TURNS:
@@ -514,6 +548,7 @@ def _run_loop(task_id: str, goal: str, session: str, worker_id: str, profile: st
                 messages = [{"role": "user", "content": goal}]
 
             # Call CLAF
+            _log(f"claf call turn={turn} messages={len(messages)}")
             payload = {
                 "model": "claude-sonnet-4-6",
                 "max_tokens": 1024,
@@ -643,7 +678,7 @@ def _fail(reason: str, task_id=None, **kwargs) -> dict:
 
 def _mcp_intake_task(args: dict) -> dict:
     goal = str(args.get("goal") or "").strip()
-    session = str(args.get("session") or "default")
+    session = str(args.get("session") or BRIDGE_SESSION)
     if not goal:
         return _fail("goal is required")
     profile = str(args.get("profile") or "").strip()
@@ -681,7 +716,7 @@ def _mcp_run_task(args: dict) -> dict:
     if status not in ("queued", "paused"):
         return _fail(f"cannot run task in status: {status}", task_id=task_id)
     _task_set_status(task_id, "queued")
-    _start_task(task_id, task["goal"], task.get("session", "default"),
+    _start_task(task_id, task["goal"], task.get("session", BRIDGE_SESSION),
                 task.get("profile", "full"))
     return _ok(result={"status": "started"}, task_id=task_id)
 
@@ -711,7 +746,7 @@ def _mcp_resume_task(args: dict) -> dict:
     with _active_lock:
         _active_tasks.pop(task_id, None)
     _task_set_status(task_id, "queued")
-    _start_task(task_id, task["goal"], task.get("session", "default"),
+    _start_task(task_id, task["goal"], task.get("session", BRIDGE_SESSION),
                 task.get("profile", "full"))
     return _ok(result={"status": "resumed"}, task_id=task_id)
 
@@ -807,8 +842,74 @@ _MCP_TOOLS = [
 # ─── JSON-RPC stdio server ────────────────────────────────────────────────────
 
 def _send(obj: dict):
-    sys.stdout.write(json.dumps(obj) + "\n")
-    sys.stdout.flush()
+    framed = bool(getattr(_send, "_framed", False))
+    payload = json.dumps(obj).encode("utf-8")
+    if framed:
+        sys.stdout.buffer.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
+        sys.stdout.buffer.write(payload)
+        sys.stdout.buffer.flush()
+    else:
+        sys.stdout.write(payload.decode("utf-8") + "\n")
+        sys.stdout.flush()
+
+
+def _read_exact(n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        chunk = sys.stdin.buffer.read(n - len(buf))
+        if not chunk:
+            break
+        buf += chunk
+    return buf
+
+
+def _iter_rpc_messages():
+    """Yield (msg, framed) from stdin.
+
+    Supports:
+    - framed stdio: Content-Length: N\\r\\n\\r\\n{json}
+    - newline-delimited json: {json}\\n
+    """
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return
+        line_str = line.decode("utf-8", errors="replace").strip()
+        if not line_str:
+            continue
+
+        if line_str.lower().startswith("content-length:"):
+            try:
+                n = int(line_str.split(":", 1)[1].strip())
+            except Exception:
+                sys.stderr.write(f"[secretary] bad content-length: {line_str}\n")
+                sys.stderr.flush()
+                continue
+
+            # headers until blank line
+            while True:
+                h = sys.stdin.buffer.readline()
+                if not h:
+                    return
+                if h in (b"\r\n", b"\n"):
+                    break
+
+            raw = _read_exact(n)
+            if not raw:
+                return
+            try:
+                yield json.loads(raw.decode("utf-8", errors="replace")), True
+            except Exception as e:
+                sys.stderr.write(f"[secretary] parse error: {e}\n")
+                sys.stderr.flush()
+            continue
+
+        try:
+            yield json.loads(line_str), False
+        except Exception as e:
+            sys.stderr.write(f"[secretary] parse error: {e}\n")
+            sys.stderr.flush()
+            continue
 
 
 def _handle_rpc(msg: dict):
@@ -860,6 +961,62 @@ def _handle_rpc(msg: dict):
             "error": {"code": -32601, "message": f"method not found: {method}"}}
 
 
+# ─── Standalone mode ──────────────────────────────────────────────────────────
+
+_STANDALONE = False
+_AUTO_SEED = os.environ.get("SECRETARY_AUTO_SEED", "1") == "1"
+_CONTEXT_DIR = Path.home() / "Desktop" / "AI_CONTEXT"
+_SCAN_INTERVAL = int(os.environ.get("SECRETARY_SCAN_INTERVAL", "30"))
+
+
+def _read_latest_context() -> str:
+    files = sorted(_CONTEXT_DIR.glob("context_*.txt"))
+    if not files:
+        return ""
+    try:
+        return files[-1].read_text()
+    except Exception:
+        return ""
+
+
+def _seed_tasks_from_context():
+    context = _read_latest_context()
+    if not context:
+        return
+    active_match = re.search(r"\[ACTIVE TASK\]\s*(.*?)(?=\n\[|\Z)", context, re.DOTALL)
+    if active_match:
+        task_text = active_match.group(1).strip()
+        if task_text and "none recorded" not in task_text.lower():
+            existing = _task_list()
+            for t in existing:
+                if t["goal"] == task_text and t["status"] in ("queued", "executing"):
+                    return
+            _log(f"seeding task from context: {task_text[:80]}")
+            _task_create(task_text)
+
+
+def _autonomous_loop():
+    """Background loop: claim queued tasks and auto-start them."""
+    while True:
+        try:
+            queued = _task_list("queued")
+            for task in queued:
+                tid = task["task_id"]
+                # Skip if already active
+                with _active_lock:
+                    if tid in _active_tasks:
+                        continue
+                _start_task(tid, task["goal"], task.get("session", BRIDGE_SESSION), task.get("profile", "full"))
+                time.sleep(2)  # stagger starts
+            # If no tasks, seed from context
+            if not queued and _AUTO_SEED:
+                _seed_tasks_from_context()
+            time.sleep(_SCAN_INTERVAL)
+        except Exception as e:
+            _log(f"autonomous loop error: {e}")
+            time.sleep(_SCAN_INTERVAL)
+
+
 # ─── HTTP health/stats server (port 8001, background thread) ─────────────────
 
 def _http_server():
@@ -908,6 +1065,38 @@ def _http_server():
                     })
                 elif self.path == "/agent/stats":
                     self._send_json(_stats_data())
+                elif self.path == "/agent/tasks":
+                    status = None
+                    if "?" in self.path:
+                        qs = self.path.split("?", 1)[1]
+                        for pair in qs.split("&"):
+                            if pair.startswith("status="):
+                                status = pair.split("=", 1)[1]
+                    self._send_json({"tasks": _task_list(status)})
+                else:
+                    self._send_json({"error": "not found"}, code=404)
+
+            def do_POST(self):
+                if self.path == "/agent/tasks":
+                    content_len = int(self.headers.get("Content-Length", 0))
+                    body = self.rfile.read(content_len).decode("utf-8")
+                    try:
+                        data = json.loads(body)
+                    except Exception:
+                        self._send_json({"error": "bad json"}, code=400)
+                        return
+                    goal = str(data.get("goal", "")).strip()
+                    if not goal:
+                        self._send_json({"error": "goal required"}, code=400)
+                        return
+                    profile = str(data.get("profile", "")).strip() or _classify_profile(goal)
+                    if profile not in _PROFILES.get("profiles", {}):
+                        profile = _PROFILES.get("default", "full")
+                    t = _task_create(goal, data.get("session", BRIDGE_SESSION), profile)
+                    # In standalone mode, auto-start the task
+                    if _STANDALONE:
+                        _start_task(t["task_id"], goal, data.get("session", BRIDGE_SESSION), profile)
+                    self._send_json({"ok": True, "task": t}, code=201)
                 else:
                     self._send_json({"error": "not found"}, code=404)
 
@@ -919,31 +1108,59 @@ def _http_server():
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
+def _resume_interrupted_tasks():
+    """On startup, re-queue any task left in executing/planning by a prior crash."""
+    stuck = _task_list("executing") + _task_list("planning")
+    for task in stuck:
+        tid = task["task_id"]
+        _log(f"resuming interrupted task {tid[:8]} goal={task.get('goal','')[:60]}")
+        _task_set_status(tid, "queued")
+        wid = f"resume-{_uid()[:8]}"
+        threading.Thread(
+            target=_run_loop,
+            args=(tid, task["goal"], task.get("session", BRIDGE_SESSION), wid, task.get("profile", "full")),
+            daemon=True,
+        ).start()
+
+
 def main():
+    global _STANDALONE
+    parser = argparse.ArgumentParser(description="Secretary Agent")
+    parser.add_argument("--standalone", action="store_true", help="Run in autonomous mode without MCP stdio")
+    args = parser.parse_args()
+    _STANDALONE = args.standalone
+
     init_db()
-    sys.stderr.write(f"[secretary] db={DB_PATH} claf={CLAF_URL} http=:{HTTP_PORT}\n")
+    mode = "standalone" if _STANDALONE else "mcp"
+    sys.stderr.write(f"[secretary] db={DB_PATH} claf={CLAF_URL} http=:{HTTP_PORT} mode={mode}\n")
     sys.stderr.flush()
 
     # Start HTTP server in background
     t = threading.Thread(target=_http_server, daemon=True)
     t.start()
 
+    # Re-run any tasks that were executing when the process last died
+    _resume_interrupted_tasks()
+
+    if _STANDALONE:
+        # Start autonomous task loop
+        auto_t = threading.Thread(target=_autonomous_loop, daemon=True)
+        auto_t.start()
+        _log("standalone mode — autonomous loop started")
+        # Keep main thread alive
+        while True:
+            time.sleep(60)
+        return 0
+
     # MCP stdio loop
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
+    for msg, framed in _iter_rpc_messages():
+        setattr(_send, "_framed", framed)
         try:
-            msg = json.loads(line)
-        except Exception as e:
-            sys.stderr.write(f"[secretary] parse error: {e}\n")
-            sys.stderr.flush()
-            continue
-        try:
-            resp = _handle_rpc(msg)
+            resp = _handle_rpc(msg if isinstance(msg, dict) else {})
         except Exception as e:
             sys.stderr.write(f"[secretary] handler crash: {e}\n")
-            resp = {"jsonrpc": "2.0", "id": msg.get("id"),
+            sys.stderr.flush()
+            resp = {"jsonrpc": "2.0", "id": (msg or {}).get("id"),
                     "error": {"code": -32603, "message": f"internal: {e}"}}
         if resp is not None:
             _send(resp)
