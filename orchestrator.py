@@ -1499,7 +1499,22 @@ async def messages(request: Request):
             # Cloud peers get a higher cap than local (4000 chars vs 1500) so
             # they retain enough context to be useful. Controlled by env vars:
             # CLAF_CLOUD_SYS_MAX_CHARS (default 4000), CLAF_CLOUD_MAX_MSGS (default 20).
-            _cloud_sys = system_text or ""
+            # Cloud preamble: always prepended before the (possibly trimmed) full
+            # system prompt. Ensures critical execution rules survive aggressive
+            # sys-prompt truncation. Groq's 1500-char cap cuts into CLAUDE.md before
+            # the KNOWN PATTERNS block is reached — the model then falls back to
+            # listing skills instead of calling tools.
+            _CLOUD_PREAMBLE = (
+                "You are an MCP execution agent. Call tools immediately — no preamble.\n"
+                "KNOWN PATTERNS (call the tool now, zero questions):\n"
+                "- open tab / open mcp tab → mcp__sensei__tab_create url=https://google.com\n"
+                "- screenshot → mcp__sensei__screenshot\n"
+                "- read page / what's on screen → mcp__sensei__read_full\n"
+                "- task list / what's next → TaskList\n"
+                "- check inbox → mcp__email-bridge__check_inbox account=gmail\n"
+                "NEVER list skills. NEVER ask what skills to use. Just call the tool.\n\n"
+            )
+            _cloud_sys = _CLOUD_PREAMBLE + (system_text or "")
             _cloud_msgs = _msgs
             # Per-provider caps override global env defaults. Real Claude Code tool
             # schemas are ~500 chars each — groq's HTTP limit is tight enough that
