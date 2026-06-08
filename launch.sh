@@ -16,11 +16,28 @@
 set -euo pipefail
 
 PROXY_URL="${CLAF_PROXY_URL:-http://localhost:8000}"
+CLAF_DIR="$HOME/projects/claf"
 
+# Auto-start the orchestrator if it isn't already up. madam = one command that
+# brings the WHOLE hybrid stack online; you never manage the proxy by hand.
 if ! curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
-    echo "ERROR: orchestrator not responding at ${PROXY_URL}/"
-    echo "Start it first:  python3 ~/projects/claf/orchestrator.py"
-    exit 1
+    echo "Orchestrator not up — starting it..."
+    # Start detached so it survives this shell; log to the usual file.
+    nohup python3 "$CLAF_DIR/orchestrator.py" >> "$CLAF_DIR/orchestrator.startup.log" 2>&1 &
+    # Wait up to ~15s for it to answer.
+    for _i in $(seq 1 30); do
+        sleep 0.5
+        if curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
+            echo "Orchestrator is up at ${PROXY_URL}"
+            break
+        fi
+    done
+    if ! curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
+        echo "ERROR: orchestrator failed to start. Check $CLAF_DIR/orchestrator.startup.log"
+        exit 1
+    fi
+else
+    echo "Orchestrator already up at ${PROXY_URL}"
 fi
 
 export ANTHROPIC_BASE_URL="$PROXY_URL"
