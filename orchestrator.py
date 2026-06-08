@@ -481,114 +481,77 @@ def ollama_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     return blocks, bool(tool_calls)
 
 
-def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None) -> tuple[str, dict, bool]:
-    import sensei_supervisor as supervisor
-    num_ctx = int(os.environ.get("CLAF_OLLAMA_CTX", "2048"))
-
-    # Cloud Ollama supports native tool calling — pass tools directly to avoid
-    # the XML ReAct system prompt that crashes the remote model.
+def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None) -> tuple[list[dict], dict, bool]:
+    """Ollama chat — local AND cloud, unified. Sends native tools when present
+    (both fast-agent:latest and qwen3-coder:480b-cloud support them) and reads
+    tool_calls back as Anthropic tool_use blocks. No more XML round-trip, no
+    ReAct system-prompt hack. Returns (content_blocks, usage, tool_use_bool)."""
     is_cloud = getattr(provider, "pool", "") == "cloud"
-    if is_cloud and tools:
-        ollama_tools = _anthropic_tools_to_ollama(tools)
-        # Cloud Ollama has large context; don't cap it at the local 2048 default.
-        cloud_ctx = int(os.environ.get("CLAF_OLLAMA_CLOUD_CTX", "32768"))
-        payload = {
-            "model": provider.model,
-            "messages": messages,
-            "tools": ollama_tools,
-            "stream": False,
-            "options": {"temperature": 0.1, "num_predict": 4096, "num_ctx": cloud_ctx},
-        }
-        lock = _OLLAMA_CLOUD_LOCK
-        with lock:
-            with httpx.Client(timeout=300.0) as client:
-                r = client.post(provider.url, json=payload)
-                r.raise_for_status()
-            data = r.json()
-        msg = data.get("message", {})
-        tool_calls = msg.get("tool_calls") or []
-        content_text = msg.get("content", "") or ""
+    if is_cloud:
+        num_ctx = int(os.environ.get("CLAF_OLLAMA_CLOUD_CTX", "32768"))
+    else:
+        num_ctx = int(os.environ.get("CLAF_OLLAMA_CTX", "2048"))
 
-        # Qwen3 "thinking mode" sometimes emits tool calls as plain text
-        # like [Tool call: name({"arg": "val"})] instead of native tool_calls.
-        # Parse those as a fallback when native tool_calls is empty.
-        if not tool_calls and content_text:
-            _tc_pat = re.compile(
-                r'\[Tool [Cc]all:\s*(\w+)\((\{.*?\})\)\]',
-                re.DOTALL,
-            )
-            for m2 in _tc_pat.finditer(content_text):
-                try:
-                    parsed_args = json.loads(m2.group(2))
-                    tool_calls.append({
-                        "function": {"name": m2.group(1), "arguments": parsed_args}
-                    })
-                except Exception:
-                    pass
-
-        if tool_calls:
-            parts = []
-            for tc in tool_calls:
-                fn = tc.get("function", {})
-                name = fn.get("name", "")
-                args = fn.get("arguments") or {}
-                parts.append(f'<tool_call>\n  <name>{name}</name>\n  <parameters>{json.dumps(args)}</parameters>\n</tool_call>')
-            text = "\n".join(parts)
-        else:
-            text = content_text
-        usage = {
-            "input_tokens": data.get("prompt_eval_count", 0),
-            "output_tokens": data.get("eval_count", 0),
-        }
-        return text, usage, bool(tool_calls)
-
-    user_msg = " ".join(m.get("content", "") for m in messages if m.get("role") == "user")
-    mode = supervisor.sniff_mode(user_msg, bool(tools), False)
-    sys_prompt = supervisor.build_system_prompt(mode, tools)
-    if sys_prompt:
-        has_system = any(m.get("role") == "system" for m in messages)
-        if has_system:
-            messages = [{"role": "system", "content": sys_prompt}] + [m for m in messages if m.get("role") != "system"]
-        else:
-            messages = [{"role": "system", "content": sys_prompt}] + messages
-    messages_out = messages
-    used_react = (mode == "work" and bool(tools))
     payload = {
         "model": provider.model,
-        "messages": messages_out,
+        "messages": messages,
         "stream": False,
-        "options": {
-            "temperature": 0.1,
-            "num_predict": min(num_ctx, 4096),
-            "num_ctx": num_ctx,
-        },
+        "options": {"temperature": 0.1, "num_predict": 4096, "num_ctx": num_ctx},
     }
-    if used_react:
-        payload["options"]["stop"] = ["</tool_call>"]
+    if tools:
+        payload["tools"] = _anthropic_tools_to_ollama(tools)
+
     lock = _OLLAMA_CLOUD_LOCK if is_cloud else None
     with (lock if lock else contextlib.nullcontext()):
         with httpx.Client(timeout=300.0) as client:
             r = client.post(provider.url, json=payload)
             r.raise_for_status()
         data = r.json()
-    msg = data.get("message", {})
-    text = msg.get("content", "")
-    thinking = msg.get("thinking", "")
-    if not text and thinking:
-        log("thinking_only_response", thinking_chars=len(thinking), model=provider.model)
-        text = (
-            "[thinking-only response — model spent its token budget on chain-of-thought "
-            f"and emitted no answer. Last 240 chars of thinking: ...{thinking[-240:]}]"
-        )
+
+    msg = data.get("message", {}) or {}
+    tool_calls = msg.get("tool_calls") or []
+    content_text = msg.get("content", "") or ""
+    thinking = msg.get("thinking", "") or ""
+
+    # Thinking-mode fallback: some qwen builds emit tool calls as plain text
+    # [Tool call: name({...})] instead of native tool_calls. Recover those.
+    if not tool_calls and content_text:
+        _tc_pat = re.compile(r'\[Tool [Cc]all:\s*(\w+)\((\{.*?\})\)\]', re.DOTALL)
+        recovered = []
+        for m2 in _tc_pat.finditer(content_text):
+            try:
+                recovered.append({"function": {"name": m2.group(1),
+                                                "arguments": json.loads(m2.group(2))}})
+            except Exception:
+                pass
+        if recovered:
+            msg = dict(msg)
+            msg["tool_calls"] = recovered
+            tool_calls = recovered
+
     usage = {
         "input_tokens": data.get("prompt_eval_count", 0),
         "output_tokens": data.get("eval_count", 0),
     }
-    return text, usage, used_react
+
+    if tool_calls:
+        blocks, tool_use = ollama_tool_calls_to_anthropic(msg)
+        return blocks, usage, tool_use
+
+    # No tool calls — plain text (surface thinking-only so Claude Code isn't blank).
+    if not content_text and thinking:
+        log("thinking_only_response", thinking_chars=len(thinking), model=provider.model)
+        content_text = (
+            "[thinking-only response — model spent its token budget on chain-of-thought "
+            f"and emitted no answer. Last 240 chars of thinking: ...{thinking[-240:]}]"
+        )
+    return [{"type": "text", "text": content_text}], usage, False
 
 
-def openai_compat_chat(provider, messages: list[dict]) -> tuple[str, dict]:
-    """OpenAI-compatible chat completions (Groq / Gemini / OpenRouter)."""
+def openai_compat_chat(provider, messages: list[dict], tools: list[dict] | None = None) -> tuple[list[dict], dict, bool]:
+    """OpenAI-compatible chat completions (Groq / Cerebras / Fireworks /
+    OpenRouter). Sends native tools when present and reads tool_calls back as
+    Anthropic tool_use blocks. Returns (content_blocks, usage, tool_use_bool)."""
     key = os.environ.get(provider.env_key or "", "")
     if not key:
         raise RuntimeError(f"{provider.name}: env var {provider.env_key} not set")
@@ -599,17 +562,21 @@ def openai_compat_chat(provider, messages: list[dict]) -> tuple[str, dict]:
         "max_tokens": 4096,
         "stream": False,
     }
+    if tools:
+        payload["tools"] = _anthropic_tools_to_ollama(tools)  # OpenAI == Ollama tool schema
+        payload["tool_choice"] = "auto"
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     with httpx.Client(timeout=120.0) as client:
         r = client.post(provider.url, json=payload, headers=headers)
         r.raise_for_status()
         data = r.json()
-    text = data["choices"][0]["message"]["content"]
+    message = data["choices"][0]["message"]
+    blocks, tool_use = openai_tool_calls_to_anthropic(message)
     usage = {
         "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
         "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
     }
-    return text, usage
+    return blocks, usage, tool_use
 
 
 _CLAF_INTERNAL_METADATA_KEYS = ("force_cloud", "emergency", "escalate")
@@ -1430,18 +1397,24 @@ async def messages(request: Request):
     tool_use = False
 
     def _dispatch_provider(p):
-        """Call the right backend for `p`. Returns (content_blocks, usage, used_react, assistant_text, tool_use)."""
+        """Call the right backend for `p`. Returns (content_blocks, usage, used_react, assistant_text, tool_use).
+
+        Tool-capable paths (ollama + openai_compat) build STRUCTURED history via
+        messages_from_anthropic so tool_use/tool_result survive across turns,
+        and read native tool_calls back as Anthropic tool_use blocks. The
+        directive-scraper is kept only as a fallback for models that emit prose
+        tool calls instead of native ones."""
+        _tools = body.get("tools")
         if p.kind == "ollama":
-            _text, _usage, _react = ollama_chat(p, messages, body.get("tools"))
-            if _react:
-                _blocks, _tool_use = supervisor.parse_work_response(_text, body.get("tools"))
-            else:
-                _blocks, _tool_use = parse_directives_to_content(_text, body.get("tools", []) or [])
-            return _blocks, _usage, _react, _text, _tool_use
+            _msgs = messages_from_anthropic(body.get("messages", []), flavor="ollama")
+            if system_text:
+                _msgs.insert(0, {"role": "system", "content": system_text})
+            _blocks, _usage, _tool_use = ollama_chat(p, _msgs, _tools)
         elif p.kind == "openai_compat":
-            _text, _usage = openai_compat_chat(p, messages)
-            _blocks, _tool_use = parse_directives_to_content(_text, body.get("tools", []) or [])
-            return _blocks, _usage, False, _text, _tool_use
+            _msgs = messages_from_anthropic(body.get("messages", []), flavor="openai")
+            if system_text:
+                _msgs.insert(0, {"role": "system", "content": system_text})
+            _blocks, _usage, _tool_use = openai_compat_chat(p, _msgs, _tools)
         elif p.kind == "anthropic":
             _blocks, _usage = anthropic_direct_chat(p, body)
             _tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in _blocks)
@@ -1449,6 +1422,20 @@ async def messages(request: Request):
             return _blocks, _usage, False, _text, _tool_use
         else:
             raise RuntimeError(f"unknown provider kind: {p.kind}")
+
+        # Fallback: model returned plain text despite having tools available —
+        # try the heuristic directive scraper (covers prose-format tool calls
+        # from models that don't emit native tool_calls).
+        if not _tool_use and _tools:
+            _text0 = "".join(b.get("text", "") for b in _blocks
+                             if isinstance(b, dict) and b.get("type") == "text")
+            if _text0:
+                _scraped, _scraped_tu = parse_directives_to_content(_text0, _tools or [])
+                if _scraped_tu:
+                    _blocks, _tool_use = _scraped, True
+        _text = "".join(b.get("text", "") for b in _blocks
+                        if isinstance(b, dict) and b.get("type") == "text")
+        return _blocks, _usage, False, _text, _tool_use
 
     try:
         while True:
