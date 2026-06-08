@@ -29,6 +29,7 @@ Env knobs (all optional):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 
@@ -149,6 +150,12 @@ from claf_config import (
     next_cloud_peer, pick_cloud_peer,
 )
 import claf_throttle as throttle
+import contextlib
+import threading
+
+# Serialize cloud Ollama requests — concurrent calls to the SSH-tunneled cloud
+# model cause 500s. One in-flight at a time; others queue and wait.
+_OLLAMA_CLOUD_LOCK = threading.Lock()
 
 
 PORT = int(os.environ.get("CLAF_PORT", "8000"))
@@ -293,9 +300,83 @@ def anthropic_to_ollama_messages(claude_messages: list) -> list[dict]:
     return out
 
 
+def _anthropic_tools_to_ollama(tools: list[dict]) -> list[dict]:
+    """Convert Anthropic tool schema to Ollama native tool format."""
+    out = []
+    for t in (tools or []):
+        schema = t.get("input_schema") or {}
+        out.append({
+            "type": "function",
+            "function": {
+                "name": t.get("name", ""),
+                "description": t.get("description", ""),
+                "parameters": schema,
+            },
+        })
+    return out
+
+
 def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None) -> tuple[str, dict, bool]:
     import sensei_supervisor as supervisor
     num_ctx = int(os.environ.get("CLAF_OLLAMA_CTX", "2048"))
+
+    # Cloud Ollama supports native tool calling — pass tools directly to avoid
+    # the XML ReAct system prompt that crashes the remote model.
+    is_cloud = getattr(provider, "pool", "") == "cloud"
+    if is_cloud and tools:
+        ollama_tools = _anthropic_tools_to_ollama(tools)
+        # Cloud Ollama has large context; don't cap it at the local 2048 default.
+        cloud_ctx = int(os.environ.get("CLAF_OLLAMA_CLOUD_CTX", "32768"))
+        payload = {
+            "model": provider.model,
+            "messages": messages,
+            "tools": ollama_tools,
+            "stream": False,
+            "options": {"temperature": 0.1, "num_predict": 4096, "num_ctx": cloud_ctx},
+        }
+        lock = _OLLAMA_CLOUD_LOCK
+        with lock:
+            with httpx.Client(timeout=300.0) as client:
+                r = client.post(provider.url, json=payload)
+                r.raise_for_status()
+            data = r.json()
+        msg = data.get("message", {})
+        tool_calls = msg.get("tool_calls") or []
+        content_text = msg.get("content", "") or ""
+
+        # Qwen3 "thinking mode" sometimes emits tool calls as plain text
+        # like [Tool call: name({"arg": "val"})] instead of native tool_calls.
+        # Parse those as a fallback when native tool_calls is empty.
+        if not tool_calls and content_text:
+            _tc_pat = re.compile(
+                r'\[Tool [Cc]all:\s*(\w+)\((\{.*?\})\)\]',
+                re.DOTALL,
+            )
+            for m2 in _tc_pat.finditer(content_text):
+                try:
+                    parsed_args = json.loads(m2.group(2))
+                    tool_calls.append({
+                        "function": {"name": m2.group(1), "arguments": parsed_args}
+                    })
+                except Exception:
+                    pass
+
+        if tool_calls:
+            parts = []
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                name = fn.get("name", "")
+                args = fn.get("arguments") or {}
+                parts.append(f'<tool_call>\n  <name>{name}</name>\n  <parameters>{json.dumps(args)}</parameters>\n</tool_call>')
+            text = "\n".join(parts)
+        else:
+            text = content_text
+        usage = {
+            "input_tokens": data.get("prompt_eval_count", 0),
+            "output_tokens": data.get("eval_count", 0),
+        }
+        return text, usage, bool(tool_calls)
+
     user_msg = " ".join(m.get("content", "") for m in messages if m.get("role") == "user")
     mode = supervisor.sniff_mode(user_msg, bool(tools), False)
     sys_prompt = supervisor.build_system_prompt(mode, tools)
@@ -319,9 +400,11 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None)
     }
     if used_react:
         payload["options"]["stop"] = ["</tool_call>"]
-    with httpx.Client(timeout=300.0) as client:
-        r = client.post(provider.url, json=payload)
-        r.raise_for_status()
+    lock = _OLLAMA_CLOUD_LOCK if is_cloud else None
+    with (lock if lock else contextlib.nullcontext()):
+        with httpx.Client(timeout=300.0) as client:
+            r = client.post(provider.url, json=payload)
+            r.raise_for_status()
         data = r.json()
     msg = data.get("message", {})
     text = msg.get("content", "")
@@ -1038,10 +1121,9 @@ async def messages(request: Request):
                 trickle_mode = "flash"
                 # Prefer tier-1 (Ollama Cloud: SSH-signed, no per-token billing,
                 # not Anthropic-Tier-1-rate-limited). If tier-1 is unavailable,
-                # use the next enabled cloud peer; if none exist, degrade local.
+                # degrade to LOCAL ONLY — do NOT fall through to paid cloud peers.
+                # Paid Anthropic tiers are explicit escalation only (force_cloud/escalate).
                 provider = pick_cloud_peer(prefer_tiers=(1,))
-                if provider is None:
-                    provider = pick_cloud_peer()
                 if provider is None:
                     throttle.refund(trickle_reservation)
                     trickle_reservation = None
@@ -1114,7 +1196,10 @@ async def messages(request: Request):
     # image content, override the model used for this single call. The
     # provider object stays the same (still tier 0 ollama); only the model
     # string is swapped before dispatch.
-    routed_model = select_local_model(body) if provider.kind == "ollama" else provider.model
+    # GUARD: only apply to local-pool ollama peers — cloud-pool ollama peers
+    # (e.g. ollama-cloud-coder) carry their own model name and must not be
+    # overridden with the local workhorse model.
+    routed_model = select_local_model(body) if (provider.kind == "ollama" and provider.pool == "local") else provider.model
     if routed_model != provider.model:
         from dataclasses import replace as _replace
         log("dual_local_route", from_model=provider.model, to_model=routed_model, reason="image_in_request")
@@ -1225,17 +1310,19 @@ async def messages(request: Request):
                     ) from _call_exc
                 log("rate_limit_next_peer", next_provider=provider.name, next_tier=provider.tier)
     except Exception as e:
-        log("provider_error", tier=provider.tier, name=provider.name, error=str(e),
+        log("provider_error", tier=getattr(provider, 'tier', None),
+            name=getattr(provider, 'name', 'unknown'), error=str(e),
             rate_limit_chain=sorted(_rate_limit_failed) if _rate_limit_failed else None)
         if trickle_reservation:
             throttle.refund(trickle_reservation)
             log("trickle_refund", reservation=trickle_reservation, reason="provider_error")
+        _pname = getattr(provider, 'name', 'all-peers-exhausted')
         return JSONResponse(
             status_code=502,
             content={
                 "error": {
                     "type": "api_error",
-                    "message": f"{provider.name} call failed: {e}",
+                    "message": f"{_pname} call failed: {e}",
                 }
             },
         )
