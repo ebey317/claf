@@ -2120,6 +2120,77 @@ async def messages(request: Request):
                 # asyncio.to_thread keeps the loop responsive; Ollama still serializes
                 # inference, but the proxy no longer goes dark while it works.
                 content_blocks, usage, used_react, assistant_text, tool_use = await asyncio.to_thread(_dispatch_provider, provider)
+
+                # ─── LOCAL AUTO-RETRY LOOP ─────────────────────────────────────
+                # For local code-as-tools: when the model emits a bash command,
+                # execute it immediately. On non-zero exit, feed stderr back as
+                # a tool_result and let the model retry (max 3). This corrects
+                # syntax errors, quoting issues, and wrong API calls without
+                # round-tripping through the client.
+                # Opt-in: CLAF_LOCAL_AUTO_RETRY=N (default 0 = off).
+                # ────────────────────────────────────────────────────────────────
+                _max_auto_retry = int(os.environ.get("CLAF_LOCAL_AUTO_RETRY", "0"))
+                if _max_auto_retry > 0 and provider.pool == "local" and tool_use:
+                    for _retry_turn in range(_max_auto_retry):
+                        _bash_blocks = [
+                            b for b in content_blocks
+                            if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "bash"
+                        ]
+                        if not _bash_blocks:
+                            break
+
+                        _all_ok = True
+                        _tool_results = []
+                        for _b in _bash_blocks:
+                            _cmd = (_b.get("input") or {}).get("command", "")
+                            if not _cmd:
+                                continue
+                            try:
+                                _proc = subprocess.run(
+                                    _cmd, shell=True, capture_output=True, text=True, timeout=60
+                                )
+                            except Exception as _exec_err:
+                                _proc = type("obj", (object,), {
+                                    "returncode": 1, "stdout": "", "stderr": str(_exec_err)
+                                })()
+                            _out = (_proc.stdout or "") + (_proc.stderr or "")
+                            if len(_out) > 2000:
+                                _out = _out[:2000] + "\n[…truncated…]"
+                            _tool_results.append({
+                                "tool_use_id": _b.get("id", "toolu_claf_unknown"),
+                                "output": _out,
+                                "exit_code": _proc.returncode,
+                            })
+                            if _proc.returncode != 0:
+                                _all_ok = False
+
+                        if _all_ok:
+                            break  # all commands succeeded
+
+                        # Build retry messages: append assistant turn + tool_results
+                        _retry_msgs = list(body.get("messages", []))
+                        _retry_msgs.append({
+                            "role": "assistant",
+                            "content": content_blocks,
+                        })
+                        _retry_msgs.append({
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tr["tool_use_id"],
+                                    "content": f"ERROR (exit {tr['exit_code']}):\n{tr['output']}",
+                                    "is_error": True,
+                                }
+                                for tr in _tool_results
+                            ],
+                        })
+                        body["messages"] = _retry_msgs
+                        log("local_auto_retry", retry=_retry_turn + 1, total=_max_auto_retry)
+
+                        # Re-call the model with error context
+                        content_blocks, usage, used_react, assistant_text, tool_use = await asyncio.to_thread(_dispatch_provider, provider)
+
                 break  # success
             except Exception as _call_exc:
                 # Any CLOUD peer failure (429 rate-limit, 413 payload-too-large,
