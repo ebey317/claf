@@ -1621,6 +1621,14 @@ _LOCAL_CHARTER = (
     "ACT by writing code. You have bash and filesystem. "
     "Build other tools on the fly: curl for web, python3 for logic, cat/grep for files. "
     "Chain steps in one script. Zero preamble. No <think> tags. Just write the command.\n\n"
+    "--- PATTERNS (copy exact syntax) ---\n"
+    "Browser: python3 -c \"from playwright.sync_api import sync_playwright; "
+    "p=sync_playwright().start(); browser=p.chromium.launch(); page=browser.new_page(); "
+    "page.goto('URL'); print(page.title()); browser.close(); p.stop()\"\n"
+    "HTTP: curl -sL 'URL' | head -n 20\n"
+    "File write: echo 'DATA' > PATH\n"
+    "File read: cat PATH\n"
+    "--- END PATTERNS ---\n\n"
 )
 
 
