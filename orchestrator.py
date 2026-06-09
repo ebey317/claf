@@ -1898,22 +1898,17 @@ async def messages(request: Request):
                 _sys, _msgs, _trim_info = _trim_for_local(_sys, _msgs)
                 if _trim_info.get("trimmed"):
                     log("local_prompt_trimmed", **_trim_info)
-                # CODE-AS-TOOLS: Instead of giving the local model a buffet of
-                # pre-built tools it can't juggle, we only pass bash + filesystem.
-                # The model WRITES CODE to create whatever other tools it needs
-                # on the fly (curl for web search, python3 for complex logic, etc.)
-                # This eliminates tool-overload hallucinations on small models.
+                # CODE-AS-TOOLS: Don't pass native tools to the local model.
+                # _LOCAL_CHARTER trains it to WRITE PLAIN TEXT commands, but
+                # Ollama's native tool-calling forces a different output format.
+                # The conflict causes qwen2.5:3b to emit empty content.
+                # Instead: no tools → model writes bash in plain text → CLAF
+                # extracts markdown fences or single-line commands as tool_use.
                 # Override: set CLAF_LOCAL_CODE_TOOLS=0 to revert to old count-based capping.
                 if os.environ.get("CLAF_LOCAL_CODE_TOOLS", "1") == "1":
-                    _allowed = {"bash", "filesystem"}
                     if _tools:
-                        _before = len(_tools)
-                        def _tool_name(t):
-                            return t.get("name") or t.get("function", {}).get("name") or ""
-                        _tools_eff = [t for t in _tools if _tool_name(t) in _allowed]
-                        if len(_tools_eff) != _before:
-                            log("local_tools_code_as_tools", tools_before=_before, tools_after=len(_tools_eff),
-                                kept=[_tool_name(t) for t in (_tools_eff or [])])
+                        log("local_tools_code_as_tools", tools_before=len(_tools), tools_after=0, kept=[])
+                    _tools_eff = None
                 else:
                     # Legacy count-based capping
                     _max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0"))
@@ -2067,9 +2062,10 @@ async def messages(request: Request):
                 if _scraped_tu:
                     _blocks, _tool_use = _scraped, True
 
-        # NO tools passed but model wrote bash in markdown blocks or plain text
-        # commands (qwen2.5:3b code-as-tools path). Extract as tool_use.
-        if not _tool_use and not _tools:
+        # Model wrote bash in markdown blocks or plain text commands
+        # (qwen2.5:3b code-as-tools path). Extract as tool_use even when
+        # native tools were passed but the model chose plain text instead.
+        if not _tool_use:
             _text0 = "".join(b.get("text", "") for b in _blocks
                              if isinstance(b, dict) and b.get("type") == "text")
             if _text0:
