@@ -22,6 +22,7 @@ In `local` mode the cloud-peer code path doesn't run at all.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 
@@ -198,21 +199,57 @@ if MODE in ("hybrid", "cloud"):
 # tool defs) stays local and doesn't silently escalate.
 # ----------------------------------------------------------------------------
 
+# Content signals that local 3B models struggle with
+_HARD_TASK_SIGNALS = {
+    "complex_reasoning": [
+        "analyze", "evaluate", "compare and contrast", "deep dive",
+        "explain why", "root cause", "trade-off", "pros and cons",
+    ],
+    "creative": [
+        "write a story", "write an essay", "creative writing",
+        "poem", "narrative", "dialogue",
+    ],
+    "debug": [
+        "debug", "fix this", "what went wrong", "traceback",
+        "stack trace", "error message", "exception",
+    ],
+    "math_logic": [
+        "prove", "theorem", "equation", "calculate", "solve for",
+        "algorithm", "complex logic",
+    ],
+    "multi_step": [
+        "step by step", "walk me through", "how do i build",
+        "create a system", "design a", "architecture",
+    ],
+}
+
+# Compile into single regex for fast scanning
+_HARD_NEEDLES = re.compile(
+    r"(?i)(" + "|".join(
+        re.escape(w) for words in _HARD_TASK_SIGNALS.values() for w in words
+    ) + r")"
+)
+
+
 def _is_hard_task(body: dict) -> bool:
     """Should this request escalate above local in hybrid mode?
 
-    Triggers (any one):
-      - explicit `metadata.escalate = True`
-      - system prompt > 24k characters (truly massive agent system)
-      - message count > 50 (very long conversation)
-      - last message content contains `[ESCALATE]` marker
+    Two-tier detection:
+      1. EXPLICIT signals (always escalate):
+         - metadata.escalate = True
+         - `[CLOUD]` or `[ESCALATE]` marker in last message
+         - system prompt > 12k chars
+         - message count > 25
+      2. CONTENT signals (escalate if matched):
+         - complex reasoning, debugging, math, creative writing,
+           multi-step architecture requests
 
-    NOTE: Tool loops are NOT escalated. Local Command-R 7B handles
-    multi-turn tool chains via markdown code-block parsing.
-    Startup routines, file reads, and routine agent work stay local.
+    Routine file reads, simple edits, and pattern-matched tasks stay local.
     """
     meta = body.get("metadata") or {}
     if meta.get("escalate") is True:
+        return True
+    if meta.get("force_cloud") is True:
         return True
 
     system = body.get("system") or ""
@@ -222,13 +259,14 @@ def _is_hard_task(body: dict) -> bool:
         )
     else:
         system_text = str(system)
-    if len(system_text) > 24_000:
+    if len(system_text) > 12_000:
         return True
 
     msgs = body.get("messages") or []
-    if len(msgs) > 50:
+    if len(msgs) > 25:
         return True
 
+    # Scan last user message for explicit markers + content signals
     if msgs:
         last = msgs[-1]
         content = last.get("content", "")
@@ -236,7 +274,10 @@ def _is_hard_task(body: dict) -> bool:
             content = " ".join(
                 b.get("text", "") if isinstance(b, dict) else str(b) for b in content
             )
-        if "[ESCALATE]" in str(content):
+        text = str(content)
+        if "[CLOUD]" in text or "[ESCALATE]" in text:
+            return True
+        if _HARD_NEEDLES.search(text):
             return True
 
     return False

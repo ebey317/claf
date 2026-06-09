@@ -1730,11 +1730,11 @@ async def messages(request: Request):
             trickle_reservation = throttle.reserve(5000, "flash", emergency=emergency)
             if trickle_reservation:
                 trickle_mode = "flash"
-                # Prefer tier-1 (Ollama Cloud: SSH-signed, no per-token billing,
-                # not Anthropic-Tier-1-rate-limited). If tier-1 is unavailable,
-                # degrade to LOCAL ONLY — do NOT fall through to paid cloud peers.
-                # Paid Anthropic tiers are explicit escalation only (force_cloud/escalate).
-                provider = pick_cloud_peer(prefer_tiers=(1,))
+                # Try ALL enabled cloud peers in tier order (not just tier-1).
+                # Ollama Cloud (tier 1) is preferred when available (free, fast),
+                # but if it's maxed out we fall through to paid peers — Anthropic,
+                # OpenRouter, etc. Only degrade to local when NO cloud peer works.
+                provider = pick_cloud_peer()
                 if provider is None:
                     throttle.refund(trickle_reservation)
                     trickle_reservation = None
