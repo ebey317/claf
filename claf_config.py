@@ -83,7 +83,7 @@ _LOCAL_PROVIDER = Provider(
     url=os.environ.get("CLAF_OLLAMA_URL", "http://localhost:11434/api/chat"),
     env_key=None,
     enabled=True,
-    notes="local; runs offline; tools + vision + thinking",
+    notes="local; runs offline; text + tools (NO vision — pull moondream or qwen2.5vl for image understanding)",
 )
 
 
@@ -92,55 +92,61 @@ def _cloud_peers() -> list[Provider]:
     Tier numbers are a configurable ordering hint, not a quality ranking."""
     return [
         Provider(
-            # Ollama Cloud — proxied through the local ollama CLI at :11434,
-            # which signs requests with ~/.ollama/id_ed25519. No per-token
-            # billing; subject only to the operator's Ollama Cloud account
-            # quota. Kind is "ollama" because the request shape is Ollama's
-            # /api/chat, not OpenAI-compat. Pool is "cloud" so it counts as
-            # an escalation peer for routing/budget purposes.
-            tier=1, name="ollama-cloud-coder", pool="cloud", kind="ollama",
-            model="qwen3-coder:480b-cloud",
-            url=os.environ.get("CLAF_OLLAMA_URL", "http://localhost:11434/api/chat"),
-            env_key=None,  # SSH-key auth, no env var
-            enabled=True,
-            notes="480B coder via Ollama Cloud (SSH-signed); 1-2s latency",
-        ),
-        # NOTE: qwen3.5:cloud and kimi-k2.5:cloud peers were removed 2026-05-22.
-        # Operator (account 'ebey317') never subscribed to Ollama Cloud paid tier;
-        # those models return "subscription required". If/when subscribed, re-add
-        # them as kind="ollama", pool="cloud", url=localhost:11434/api/chat,
-        # env_key=None. SSH-signed via local ollama CLI.
-        Provider(
-            tier=2, name="groq", pool="cloud", kind="openai_compat",
+            tier=1, name="groq", pool="cloud", kind="openai_compat",
             model="llama-3.3-70b-versatile",
             url="https://api.groq.com/openai/v1/chat/completions",
             env_key="GROQ_API_KEY",
             enabled=_env_present("GROQ_API_KEY"),
-            notes="free tier, fast; rate-limited",
+            notes="WORKHORSE — free tier, fast, reliable. Primary escalation target.",
             max_tools=8,         # 8 high-freq sensei tools ~600 chars each in OAI fmt = ~4.8K
             max_sys_chars=6500,  # charter (~3.1K) + ~3.4K real context; body stays ~10K << 30K
             max_msgs=6,          # cap history to prevent 413 from large tool_result blocks
             max_msg_content=500, # each message trimmed to 500 chars; tool_results can be huge
         ),
         Provider(
-            tier=3, name="cerebras", pool="cloud", kind="openai_compat",
-            # Cerebras account 'ebey317' as of 2026-06-08: only zai-glm-4.7 and
-            # gpt-oss-120b available. qwen-3-235b removed (was 404). Use 120B.
+            tier=2, name="cerebras", pool="cloud", kind="openai_compat",
             model="gpt-oss-120b",
             url="https://api.cerebras.ai/v1/chat/completions",
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
-            notes="ultra-fast inference; gpt-oss-120b via Cerebras. WORKHORSE peer "
-                  "(groq 429s on free tier) — gets FULL memory/history untrimmed so "
-                  "the hybrid carries the same context the operator's primary agent has.",
-            # 120B model + Cerebras tolerates large bodies (115KB observed). Send
-            # the full natively-loaded memory (CLAUDE.md + MEMORY.md + ⚠️/⚡ memories
-            # injected by userpromptsubmit_inject.sh) WITHOUT trimming. This is what
-            # makes the hybrid stop needing re-teaching.
+            notes="ultra-fast inference; gpt-oss-120b via Cerebras. Gets FULL memory/history.",
             full_context=True,
         ),
         Provider(
-            tier=4, name="deepseek", pool="cloud", kind="openai_compat",
+            tier=3, name="openrouter", pool="cloud", kind="openai_compat",
+            model="anthropic/claude-sonnet-4.6",
+            url="https://openrouter.ai/api/v1/chat/completions",
+            env_key="OPENROUTER_API_KEY",
+            enabled=_env_present("OPENROUTER_API_KEY"),
+            notes="UNIVERSAL GATEWAY — one key, every model. Primary paid tier. Routes to cheapest provider.",
+            max_tools=20,
+            max_sys_chars=4000,
+            max_msgs=8,
+        ),
+        Provider(
+            tier=4, name="anthropic", pool="cloud", kind="anthropic",
+            model="claude-sonnet-4-6-20251022",
+            url="https://api.anthropic.com/v1/messages",
+            env_key="ANTHROPIC_API_KEY",
+            enabled=_env_present("ANTHROPIC_API_KEY"),
+            notes="OVERSEER — Claude Sonnet 4.6 direct. Fallback when OpenRouter fails. Add credits at console.anthropic.com",
+            max_tools=20,
+            max_sys_chars=4000,
+            max_msgs=8,
+        ),
+        Provider(
+            # Ollama Cloud — operator (account 'ebey317') is currently MAXED OUT
+            # for the week. This peer works when quota resets. Keep enabled so
+            # it auto-recovers; tier lowered so working peers are tried first.
+            tier=5, name="ollama-cloud-coder", pool="cloud", kind="ollama",
+            model="qwen3-coder:480b-cloud",
+            url=os.environ.get("CLAF_OLLAMA_URL", "http://localhost:11434/api/chat"),
+            env_key=None,  # SSH-key auth, no env var
+            enabled=True,
+            notes="480B coder via Ollama Cloud (SSH-signed); MAXED OUT this week — will recover on reset",
+        ),
+        Provider(
+            tier=6, name="deepseek", pool="cloud", kind="openai_compat",
             model="deepseek-chat",
             url="https://api.deepseek.com/v1/chat/completions",
             env_key="DEEPSEEK_API_KEY",
@@ -148,7 +154,7 @@ def _cloud_peers() -> list[Provider]:
             notes="DeepSeek direct; enabled when DEEPSEEK_API_KEY is present",
         ),
         Provider(
-            tier=5, name="openai", pool="cloud", kind="openai_compat",
+            tier=7, name="openai", pool="cloud", kind="openai_compat",
             model="gpt-4o-mini",
             url="https://api.openai.com/v1/chat/completions",
             env_key="OPENAI_API_KEY",
@@ -156,44 +162,21 @@ def _cloud_peers() -> list[Provider]:
             notes="OpenAI direct; enabled when OPENAI_API_KEY is present",
         ),
         Provider(
-            tier=6, name="fireworks", pool="cloud", kind="openai_compat",
+            tier=8, name="fireworks", pool="cloud", kind="openai_compat",
             model="accounts/fireworks/models/deepseek-v4-pro",
             url="https://api.fireworks.ai/inference/v1/chat/completions",
             env_key="FIREWORKS_API_KEY",
-            # SUSPENDED 2026-06-08: account hit monthly spend limit. 412 on every
-            # request. Disable until operator resolves at fireworks.ai/account/billing.
             enabled=False,
             notes="SUSPENDED — monthly limit; re-enable after billing resolved",
             max_tools=40,
         ),
         Provider(
-            tier=7, name="openrouter", pool="cloud", kind="openai_compat",
-            model="anthropic/claude-sonnet-4.6",
-            url="https://openrouter.ai/api/v1/chat/completions",
-            env_key="OPENROUTER_API_KEY",
-            enabled=_env_present("OPENROUTER_API_KEY"),
-            notes="multi-provider gateway; routes to Sonnet 4.6",
-        ),
-        Provider(
-            tier=8, name="gemini", pool="cloud", kind="openai_compat",
+            tier=9, name="gemini", pool="cloud", kind="openai_compat",
             model="gemini-2.5-flash",
             url="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             env_key="GEMINI_API_KEY",
             enabled=_env_present("GEMINI_API_KEY"),
             notes="long-context free tier (no key set 2026-05-22)",
-        ),
-        Provider(
-            tier=9, name="anthropic", pool="cloud", kind="anthropic",
-            # Was claude-opus-4-7. Tier-1 Console accounts have very tight
-            # rate limits on Opus/Sonnet (every call 429s) while Haiku has
-            # headroom. Restore Opus once the operator's Anthropic spend
-            # raises the tier — until then Haiku is the only model that
-            # actually serves on this key. 2026-05-22.
-            model="claude-haiku-4-5-20251001",
-            url="https://api.anthropic.com/v1/messages",
-            env_key="ANTHROPIC_API_KEY",
-            enabled=_env_present("ANTHROPIC_API_KEY"),
-            notes="peer in cloud pool; Haiku-pinned while tier is rate-limited",
         ),
     ]
 
@@ -220,13 +203,14 @@ def _is_hard_task(body: dict) -> bool:
 
     Triggers (any one):
       - explicit `metadata.escalate = True`
-      - system prompt > 40k characters (truly large agent system)
-      - message count > 60 (very long conversation)
+      - system prompt > 24k characters (truly massive agent system)
+      - message count > 50 (very long conversation)
       - last message content contains `[ESCALATE]` marker
-      - active tool loop: any message contains tool_use or tool_result blocks
-        (local Qwen has CLAF_LOCAL_MAX_TOOLS=0 and can't continue a tool loop)
+
+    NOTE: Tool loops are NOT escalated. Local Command-R 7B handles
+    multi-turn tool chains via markdown code-block parsing.
+    Startup routines, file reads, and routine agent work stay local.
     """
-    import os as _os
     meta = body.get("metadata") or {}
     if meta.get("escalate") is True:
         return True
@@ -238,11 +222,11 @@ def _is_hard_task(body: dict) -> bool:
         )
     else:
         system_text = str(system)
-    if len(system_text) > 40_000:
+    if len(system_text) > 24_000:
         return True
 
     msgs = body.get("messages") or []
-    if len(msgs) > 60:
+    if len(msgs) > 50:
         return True
 
     if msgs:
@@ -254,18 +238,6 @@ def _is_hard_task(body: dict) -> bool:
             )
         if "[ESCALATE]" in str(content):
             return True
-
-    # Active tool loop detection: escalate if any turn contains tool_use or
-    # tool_result blocks. Local Qwen has CLAF_LOCAL_MAX_TOOLS=0 and cannot
-    # continue a tool loop — routing it local silently breaks agent automation.
-    local_max_tools = int(_os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0"))
-    if local_max_tools == 0:
-        for msg in msgs:
-            c = msg.get("content", [])
-            if isinstance(c, list):
-                for blk in c:
-                    if isinstance(blk, dict) and blk.get("type") in ("tool_use", "tool_result"):
-                        return True
 
     return False
 
