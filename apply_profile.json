@@ -1,0 +1,147 @@
+{
+  "full_name": "Elijah Wilkins",
+  "first_name": "Elijah",
+  "last_name": "Wilkins",
+  "email": "ewilkinssr@aol.com",
+  "email_alt": "ebey317@gmail.com",
+  "phone": "(317) 332-2323",
+  "address": "3820 E. 32nd St.",
+  "address_line2": "B",
+  "city": "Indianapolis",
+  "state": "Indiana",
+  "state_abbr": "IN",
+  "zip": "46218",
+  "country": "United States",
+  "county": "Marion",
+  "recent_job": "Install Technician at All Trades Staffing (placed at Lehman's Mechanical / Northern Comfort Systems), Indianapolis IN, Jan 2026 - May 2026. Installed HVAC systems in residential and commercial construction.",
+  "work_history": [
+    {
+      "title": "Install Technician",
+      "company": "All Trades Staffing, Inc.",
+      "location": "Indianapolis, IN",
+      "start": "Jan 2026",
+      "end": "May 2026"
+    },
+    {
+      "title": "Install Technician",
+      "company": "Carolina Construction Services",
+      "location": "Indianapolis, IN",
+      "start": "May 2025",
+      "end": "Dec 2025"
+    },
+    {
+      "title": "Roadway Maintenance Crew",
+      "company": "Interstate Business Solutions",
+      "location": "Indianapolis, IN",
+      "start": "Aug 2024",
+      "end": "Nov 2024"
+    },
+    {
+      "title": "Sheet Metal Fabricator",
+      "company": "Local 20 Sheet Metal Union",
+      "location": "Indianapolis, IN",
+      "start": "Jun 2022",
+      "end": "Nov 2023"
+    },
+    {
+      "title": "HVAC Technician",
+      "company": "Welch Climate Technologies",
+      "location": "Indianapolis, IN",
+      "start": "Aug 2021",
+      "end": "Jun 2022"
+    },
+    {
+      "title": "Maintenance Technician",
+      "company": "Super 8 Motels",
+      "location": "Indianapolis, IN",
+      "start": "Jan 2021",
+      "end": "Jun 2021"
+    },
+    {
+      "title": "HVAC Technician's Assistant (Top Helper)",
+      "company": "Kemco of Burlington",
+      "location": "Burlington, NC",
+      "start": "Sep 2016",
+      "end": "Sep 2018"
+    }
+  ],
+  "education": [
+    {
+      "school": "ACC Tech",
+      "location": "Indianapolis, IN",
+      "credential": "HVAC / Facility Maintenance Trade Certificate",
+      "year": "2020"
+    },
+    {
+      "school": "Butler University",
+      "location": "Indianapolis, IN",
+      "credential": "GED",
+      "year": "2006"
+    }
+  ],
+  "certifications": "EPA Section 608 Type I & II Technician Certification (Oct 2020 - present)",
+  "years_experience": "8",
+  "salary_target": "$50,000",
+  "salary_minimum": "$45,000",
+  "demographics": {
+    "race": "Black or African American",
+    "hispanic_or_latino": "No",
+    "gender": "Male",
+    "veteran_status": "I don't wish to answer",
+    "disability_status": "I don't wish to answer"
+  },
+  "work_authorization": {
+    "authorized_us": "Yes",
+    "sponsorship_needed": "No",
+    "eighteen_or_older": "Yes",
+    "us_citizen": "Yes"
+  },
+  "screener_defaults": {
+    "drivers_license": "Yes",
+    "epa_type_ii": "Yes",
+    "reliable_transportation": "Yes",
+    "sms_text_consent": "Yes",
+    "background_check_consent": "Yes",
+    "drug_test_willing": "Yes",
+    "highest_education": "High school diploma or GED",
+    "years_hvac_experience": "8",
+    "how_did_you_hear": "Internet",
+    "willing_to_relocate_local": "Yes",
+    "salary_expectation": "$50,000",
+    "shift_preference": "1st shift",
+    "willing_to_travel": "No"
+  },
+  "wotc": {
+    "veteran": "No",
+    "served_armed_forces": "No",
+    "tanf_afdc": "No",
+    "ssi_recipient": "No",
+    "long_term_unemployed": "No",
+    "ex_felon": "Yes",
+    "zip_empowerment_zone": "Yes"
+  },
+  "felony": {
+    "has_conviction": true,
+    "yes_no_answer": "Yes",
+    "details": "HARD_STOP"
+  },
+  "_notes": {
+    "autofill_traps": "Address Line 2 must stay blank. Phone extension must stay blank. Legal name is preferred name (no preferred-name checkbox). Double-check address not mangled.",
+    "hard_stops": [
+      "ssn",
+      "dob",
+      "banking",
+      "esign_legal",
+      "new_account_creation",
+      "felony_freetext"
+    ],
+    "do_not_apply": [
+      "Tradesmen International",
+      "All Trades Staffing",
+      "apartment maintenance",
+      "multifamily",
+      "CDL",
+      "diesel mechanic"
+    ]
+  }
+}

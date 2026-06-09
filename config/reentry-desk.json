@@ -1,0 +1,36 @@
+{
+  "name": "reentry-desk",
+  "type": "mcp_server",
+  "command": "python3",
+  "args": ["/home/elijah/projects/reentry-desk/server.py"],
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "description": "Client intake and form completion tracking for reentry programs",
+  "tools": [
+    {
+      "name": "create_client",
+      "description": "Create a new client and build intake profile"
+    },
+    {
+      "name": "get_client",
+      "description": "Retrieve client profile by ID or name"
+    },
+    {
+      "name": "list_forms",
+      "description": "Return which forms the client still needs completed"
+    },
+    {
+      "name": "fill_form",
+      "description": "Pass client profile + form template to browser layer for autofill"
+    },
+    {
+      "name": "mark_complete",
+      "description": "Log form completion with timestamp"
+    },
+    {
+      "name": "get_status",
+      "description": "Return full pipeline status for a client"
+    }
+  ]
+}
