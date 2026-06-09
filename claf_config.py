@@ -126,7 +126,7 @@ def _cloud_peers() -> list[Provider]:
         ),
         Provider(
             tier=4, name="anthropic", pool="cloud", kind="anthropic",
-            model="claude-sonnet-4-6-20251022",
+            model="claude-sonnet-4-6",
             url="https://api.anthropic.com/v1/messages",
             env_key="ANTHROPIC_API_KEY",
             enabled=_env_present("ANTHROPIC_API_KEY"),
