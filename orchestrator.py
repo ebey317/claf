@@ -1730,11 +1730,17 @@ async def messages(request: Request):
             trickle_reservation = throttle.reserve(5000, "flash", emergency=emergency)
             if trickle_reservation:
                 trickle_mode = "flash"
-                # Try ALL enabled cloud peers in tier order (not just tier-1).
-                # Ollama Cloud (tier 1) is preferred when available (free, fast),
-                # but if it's maxed out we fall through to paid peers — Anthropic,
-                # OpenRouter, etc. Only degrade to local when NO cloud peer works.
-                provider = pick_cloud_peer()
+                # Try ALL enabled cloud peers. If CLAF_PREFERRED_CLOUD is set
+                # (e.g. "anthropic"), that provider's tier is tried first;
+                # otherwise normal tier ordering (lowest tier wins).
+                _pref_name = os.environ.get("CLAF_PREFERRED_CLOUD", "").strip().lower()
+                _pref_tiers: tuple[int, ...] | None = None
+                if _pref_name:
+                    _pref_tiers = tuple(
+                        p.tier for p in PROVIDERS
+                        if p.pool == "cloud" and p.enabled and p.name.lower() == _pref_name
+                    )
+                provider = pick_cloud_peer(prefer_tiers=_pref_tiers if _pref_tiers else None)
                 if provider is None:
                     throttle.refund(trickle_reservation)
                     trickle_reservation = None
