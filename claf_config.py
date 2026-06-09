@@ -136,15 +136,15 @@ def _cloud_peers() -> list[Provider]:
             max_msgs=8,
         ),
         Provider(
-            # Ollama Cloud — operator (account 'ebey317') is currently MAXED OUT
-            # for the week. This peer works when quota resets. Keep enabled so
-            # it auto-recovers; tier lowered so working peers are tried first.
+            # Ollama Cloud — model deleted (operator removed unused models).
+            # Re-enable if model is re-pulled. Disabled to prevent failed calls
+            # blocking legitimate cloud peers (Anthropic, etc.).
             tier=5, name="ollama-cloud-coder", pool="cloud", kind="ollama",
             model="qwen3-coder:480b-cloud",
             url=os.environ.get("CLAF_OLLAMA_URL", "http://localhost:11434/api/chat"),
-            env_key=None,  # SSH-key auth, no env var
-            enabled=True,
-            notes="480B coder via Ollama Cloud (SSH-signed); MAXED OUT this week — will recover on reset",
+            env_key=None,
+            enabled=False,
+            notes="DISABLED — model deleted; re-enable after re-pulling qwen3-coder:480b-cloud",
         ),
         Provider(
             tier=6, name="deepseek", pool="cloud", kind="openai_compat",
