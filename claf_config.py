@@ -259,11 +259,18 @@ def _is_hard_task(body: dict) -> bool:
         )
     else:
         system_text = str(system)
-    if len(system_text) > 12_000:
+    # Claude Code's normal system prompt (tool definitions + agent instructions)
+    # is ~33k chars. The old 12k threshold caused every request to escalate.
+    # 100k catches genuinely massive custom prompts while letting normal
+    # Claude Code traffic stay local unless other signals trigger escalation.
+    if len(system_text) > 100_000:
         return True
 
     msgs = body.get("messages") or []
-    if len(msgs) > 25:
+    # Claude Code conversations routinely hit 25+ messages; the local model
+    # already trims to the last 10, so context size isn't the issue. Escalate
+    # only when conversations are genuinely massive (100+ turns).
+    if len(msgs) > 100:
         return True
 
     # Scan last user message for explicit markers + content signals
@@ -390,8 +397,10 @@ def _select_mode(body: dict):
 # ----------------------------------------------------------------------------
 
 def _pick_cloud_peer() -> Provider:
-    """Pick the enabled cloud peer with the lowest tier (configurable ordering).
-    No provider hardcoded as preferred — tier is the only ordering signal."""
+    """Pick the enabled cloud peer.
+
+    If CLAF_PREFERRED_CLOUD is set (e.g. "anthropic"), that provider is
+    tried first; otherwise normal tier ordering (lowest tier wins)."""
     cloud = [p for p in PROVIDERS if p.pool == "cloud" and p.enabled]
     if not cloud:
         raise RuntimeError(
@@ -399,6 +408,11 @@ def _pick_cloud_peer() -> Provider:
             "Set one of: GROQ_API_KEY, GEMINI_API_KEY, CEREBRAS_API_KEY, "
             "FIREWORKS_API_KEY, OPENROUTER_API_KEY, ANTHROPIC_API_KEY."
         )
+    _pref_name = os.environ.get("CLAF_PREFERRED_CLOUD", "").strip().lower()
+    if _pref_name:
+        for p in cloud:
+            if p.name.lower() == _pref_name:
+                return p
     return min(cloud, key=lambda p: p.tier)
 
 
