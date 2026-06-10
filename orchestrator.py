@@ -32,7 +32,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shlex
 
 def get_page_content(browser_data):
     if len(browser_data) > 500:
@@ -176,11 +175,12 @@ _LOCAL = next((p for p in PROVIDERS if p.pool == "local"), None)
 LOCAL_MODEL = _LOCAL.model if _LOCAL else None
 OLLAMA_URL = _LOCAL.url if _LOCAL else None
 
-# Dual-local routing: pick a different Ollama model when the request contains
-# image content. Default workhorse handles text/tool/code; vision model gets
-# routed image-bearing requests. Set CLAF_VISION_MODEL to enable; absent →
-# vision routes to the same workhorse (current single-model behavior).
+# Three-tier local routing:
+#   CLAF_VISION_MODEL  → image requests
+#   CLAF_SPEED_MODEL   → short/simple text (no tools, ≤3 user msgs, ≤200 chars)
+#   CLAF_LOCAL_MODEL   → everything else (workhorse: code, tools, agents)
 VISION_MODEL = os.environ.get("CLAF_VISION_MODEL", "").strip() or None
+SPEED_MODEL  = os.environ.get("CLAF_SPEED_MODEL",  "").strip() or None
 
 
 def _request_has_image(body: dict) -> bool:
@@ -194,10 +194,27 @@ def _request_has_image(body: dict) -> bool:
     return False
 
 
+def _request_is_simple(body: dict) -> bool:
+    """True for short plain-text turns: no tools, few msgs, short prompt."""
+    if body.get("tools"):
+        return False
+    msgs = body.get("messages", []) or []
+    user_msgs = [m for m in msgs if m.get("role") == "user"]
+    if len(user_msgs) > 3:
+        return False
+    last = user_msgs[-1].get("content", "") if user_msgs else ""
+    text = last if isinstance(last, str) else " ".join(
+        b.get("text", "") for b in last if isinstance(b, dict)
+    )
+    return len(text) < 300
+
+
 def select_local_model(body: dict) -> str:
-    """Choose which Ollama model to route to for this request.
-    - Image present + CLAF_VISION_MODEL set → vision model
-    - Otherwise → the configured local workhorse
+    """Two-tier routing:
+    - image → qwen3-vl:8b (vision, on-demand)
+    - everything else → qwen3.5:9b (stays warm in VRAM)
+      think:false when tools present (execution), think:true when planning
+    hermes3:3b kept as reserve — not in active rotation (VRAM swap cost > speed gain)
     """
     if VISION_MODEL and _request_has_image(body):
         return VISION_MODEL
@@ -544,28 +561,6 @@ def openai_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     return blocks, bool(tool_calls)
 
 
-def _fix_bash_args(args: dict) -> dict:
-    """Small models hallucinate wrong parameter names for bash tool.
-    Reconstruct a valid {command: ...} dict from whatever garbage they emitted."""
-    if not isinstance(args, dict):
-        return {"command": "echo 'no args'"}
-    # 1. Model got it right — keep it.
-    if isinstance(args.get("command"), str) and args["command"].strip():
-        return args
-    # 2. Look for any string value that looks like a shell command.
-    for v in args.values():
-        if isinstance(v, str) and v.strip() and any(c in v for c in " |/;-$*><&"):
-            return {"command": v.strip()}
-    # 3. Reconstruct from keys: flags (-l, --help) + paths (/tmp, ./foo).
-    flags = [k for k in args if isinstance(k, str) and k.startswith("-") and args[k]]
-    paths = [k for k in args if isinstance(k, str) and (k.startswith("/") or k.startswith(".") or k.startswith("~"))]
-    if flags or paths:
-        cmd = "ls " + " ".join(flags + paths)
-        return {"command": cmd.strip()}
-    # 4. Fallback — echo the broken args so the user/loop sees what happened.
-    return {"command": f"echo 'broken tool args: {json.dumps(args)}'"}
-
-
 def ollama_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     """Ollama message → Anthropic content blocks.
     Ollama returns tool-call arguments as a DICT (not a string)."""
@@ -584,20 +579,10 @@ def ollama_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
                 args = {}
         elif not isinstance(args, dict):
             args = {}
-        name = fn.get("name", "")
-        # Fix broken tool calls from small local models:
-        # - empty name + bash-looking args → assume bash
-        # - wrong parameter names → reconstruct command
-        if not name and isinstance(args, dict):
-            if any(k.startswith("-") for k in args if isinstance(k, str)) or \
-               any(k.startswith("/") for k in args if isinstance(k, str)):
-                name = "bash"
-        if name == "bash":
-            args = _fix_bash_args(args)
         blocks.append({
             "type": "tool_use",
             "id": tc.get("id") or f"toolu_claf_{uuid.uuid4().hex[:24]}",
-            "name": name,
+            "name": fn.get("name", ""),
             "input": args,
         })
     if not blocks:
@@ -625,13 +610,28 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
         cap = int(os.environ.get("CLAF_LOCAL_MAX_PREDICT", "512"))
         num_predict = min(max_tokens or cap, cap)
 
+    THINKING_MODELS = {"qwen3.5:9b", "qwen3:8b", "qwen3:14b", "qwen3:30b", "qwen3:32b"}
+    # Thinking budget tiers: light=512 medium=1024 heavy=2048 extra=4096 tokens
+    THINK_BUDGETS = {"light": 512, "medium": 1024, "heavy": 2048, "extra": 4096}
+    think_level = os.environ.get("CLAF_THINK_LEVEL", "medium").strip().lower()
+    think_budget = THINK_BUDGETS.get(think_level, 1024)
+
+    opts = {"temperature": 0.1, "num_predict": num_predict, "num_ctx": num_ctx}
+
     payload = {
         "model": provider.model,
         "messages": messages,
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": num_ctx,
-                    "num_thread": 8},
+        "options": opts,
     }
+    if provider.model in THINKING_MODELS:
+        if bool(tools) or _request_is_simple({"tools": tools, "messages": messages}):
+            # execution mode or simple chat — thinking off, normal token cap
+            payload["think"] = False
+        else:
+            # complex planning — thinking on at configured budget
+            payload["think"] = True
+            payload["options"]["num_predict"] = think_budget
     if tools:
         payload["tools"] = _anthropic_tools_to_ollama(tools)
 
@@ -755,22 +755,12 @@ def anthropic_direct_chat(provider, body: dict) -> tuple[list, dict]:
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
-        # Enable prompt caching — saves 50-90% on repeated system/tool context
-        "anthropic-beta": "prompt-caching-2024-07-31",
     }
     with httpx.Client(timeout=300.0) as client:
         r = client.post(provider.url, json=payload, headers=headers)
         if not r.is_success:
-            # Parse Anthropic's structured error for better diagnostics
-            anthropic_error = r.text[:500]
-            try:
-                err_json = r.json()
-                if err_json.get("type") == "error" and "error" in err_json:
-                    anthropic_error = err_json["error"].get("message", anthropic_error)
-            except Exception:
-                pass
             log("anthropic_direct_error", status=r.status_code,
-                error_body=anthropic_error,
+                error_body=r.text[:500],
                 payload_keys=list(payload.keys()),
                 betas=payload.get("betas"),
                 thinking_type=payload.get("thinking", {}).get("type") if isinstance(payload.get("thinking"), dict) else payload.get("thinking"),
@@ -909,7 +899,7 @@ def _find_tool(available: list, name: str) -> dict | None:
     for t in available or []:
         if not isinstance(t, dict):
             continue
-        tool_name = str(t.get("name") or t.get("function", {}).get("name", "")).strip().lower()
+        tool_name = str(t.get("name", "")).strip().lower()
         if not tool_name:
             continue
         aliases = {tool_name}
@@ -1068,50 +1058,6 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
                 )
             )
 
-    # Pass 4: markdown fenced code blocks → bash tool (code-as-tools path)
-    # Models like Command-R emit bash/python in ```bash / ```python blocks.
-    _MD_FENCE = re.compile(
-        r"^\s*```(?:bash|sh|shell|zsh)\n(.*?)```\s*$",
-        re.DOTALL | re.MULTILINE,
-    )
-    _PY_FENCE = re.compile(
-        r"^\s*```(?:python|python3|py)\n(.*?)```\s*$",
-        re.DOTALL | re.MULTILINE,
-    )
-    _bash_tool = _find_tool(available_tools, "bash")
-    _bash_name = (_bash_tool.get("name") or _bash_tool.get("function", {}).get("name")) if _bash_tool else None
-    if _bash_name:
-        for m in _MD_FENCE.finditer(text):
-            cmd = m.group(1).strip()
-            if cmd:
-                found.append(
-                    (
-                        m.start(),
-                        m.end(),
-                        {
-                            "type": "tool_use",
-                            "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
-                            "name": _bash_name,
-                            "input": {"command": cmd},
-                        },
-                    )
-                )
-        for m in _PY_FENCE.finditer(text):
-            cmd = m.group(1).strip()
-            if cmd:
-                found.append(
-                    (
-                        m.start(),
-                        m.end(),
-                        {
-                            "type": "tool_use",
-                            "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
-                            "name": _bash_name,
-                            "input": {"command": f"python3 -c {shlex.quote(cmd)}"},
-                        },
-                    )
-                )
-
     if not found:
         return [{"type": "text", "text": text}], False
 
@@ -1169,93 +1115,15 @@ def _openai_tools_to_anthropic(tools: list) -> list:
     return out
 
 
-def openai_messages_to_anthropic(messages: list) -> list:
-    """Convert OpenAI-format messages to Anthropic Messages API format.
-
-    Handles the structural differences:
-    - assistant + tool_calls → content blocks with tool_use
-    - tool role messages → user role with tool_result blocks
-    - system role messages → skipped (handled as top-level system field)
-    - plain user/assistant text → passed through
-    """
-    out: list[dict] = []
-    i = 0
-    while i < len(messages):
-        m = messages[i]
-        role = m.get("role", "user")
-        content = m.get("content", "")
-
-        if role == "system":
-            i += 1
-            continue
-
-        if role == "tool":
-            # Collect consecutive tool messages into one user message
-            # with multiple tool_result blocks
-            tool_results: list[dict] = []
-            while i < len(messages) and messages[i].get("role") == "tool":
-                tm = messages[i]
-                tool_content = tm.get("content", "")
-                if not isinstance(tool_content, str):
-                    tool_content = json.dumps(tool_content)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tm.get("tool_call_id", ""),
-                    "content": tool_content,
-                })
-                i += 1
-            out.append({"role": "user", "content": tool_results})
-            continue
-
-        if role == "assistant":
-            tool_calls = m.get("tool_calls")
-            if tool_calls:
-                blocks: list[dict] = []
-                if content:
-                    blocks.append({"type": "text", "text": str(content)})
-                for tc in tool_calls:
-                    fn = tc.get("function", {}) or {}
-                    args = fn.get("arguments", "{}")
-                    try:
-                        input_dict = json.loads(args) if isinstance(args, str) else args
-                    except json.JSONDecodeError:
-                        input_dict = {}
-                    blocks.append({
-                        "type": "tool_use",
-                        "id": tc.get("id", ""),
-                        "name": fn.get("name", ""),
-                        "input": input_dict,
-                    })
-                out.append({"role": "assistant", "content": blocks})
-                i += 1
-                continue
-            # Plain assistant message
-            out.append({"role": "assistant", "content": content if isinstance(content, str) else str(content)})
-            i += 1
-            continue
-
-        # Default: user message
-        out.append({"role": "user", "content": content if isinstance(content, str) else str(content)})
-        i += 1
-
-    return out
-
-
 def _openai_to_anthropic(body: dict) -> dict:
-    result = {
+    return {
         "model": body.get("model", "claude-sonnet-4-6"),
-        "messages": openai_messages_to_anthropic(body.get("messages", [])),
+        "messages": body.get("messages", []),
         "tools": _openai_tools_to_anthropic(body.get("tools")),
-        "max_tokens": body.get("max_tokens", 4096),
+        "max_tokens": body.get("max_tokens", 1024),
         "stream": body.get("stream", False),
         "system": body.get("system", ""),
     }
-    # Pass through optional params Anthropic supports
-    if "temperature" in body:
-        result["temperature"] = body["temperature"]
-    if "top_p" in body:
-        result["top_p"] = body["top_p"]
-    return result
 
 
 def _anthropic_to_openai(anthropic_resp: dict, model: str) -> dict:
@@ -1412,13 +1280,6 @@ async def chat_completions(request: Request):
     # Build messages
     system_text = flatten_system(anthropic_body.get("system"))
     _msgs = messages_from_anthropic(anthropic_body.get("messages", []), flavor="ollama" if provider.kind == "ollama" else "openai")
-
-    # Trim for local Ollama — same guard as /v1/messages path
-    if provider.kind == "ollama" and getattr(provider, "pool", "") == "local":
-        system_text, _msgs, _trim_info = _trim_for_local(system_text or "", _msgs)
-        if _trim_info.get("trimmed"):
-            log("local_prompt_trimmed", **_trim_info)
-
     if system_text:
         _msgs.insert(0, {"role": "system", "content": system_text})
 
@@ -1572,11 +1433,11 @@ def _do_tap_polish(body: dict, draft_text: str) -> str:
     polish_prompt = template.format(snippet=f"INTENT: {prompt_text[:300]}\n\nDRAFT:\n```\n{snippet}\n```")
 
     try:
-        # Tap polish NEVER uses direct Anthropic billing (kind="anthropic").
-        # openai_compat only: groq(2), cerebras(3), openrouter(4),
-        # ollama-cloud-coder(5), deepseek(6), openai(7). Console key stays untouched.
+        # Tap polish NEVER uses direct Anthropic billing (kind="anthropic",
+        # tier 9). openai_compat only: groq(2), cerebras(3), fireworks(6),
+        # openrouter(7), ollama-cloud-coder(1). Console key stays untouched.
         peer = pick_cloud_peer(
-            prefer_tiers=(2, 4, 5, 6, 7, 1),
+            prefer_tiers=(2, 3, 6, 7, 1),
             allowed_kinds=("openai_compat",),
         )
         if peer is None:
@@ -1624,40 +1485,18 @@ def _do_tap_polish(body: dict, draft_text: str) -> str:
 #                 CLAF_LOCAL_MAX_MSGS (default 10).
 # Set CLAF_LOCAL_TRIM=0 to disable entirely.
 # ---------------------------------------------------------------------------
-_LOCAL_CHARTER = (
-    "ACT by writing code. You have bash and filesystem. "
-    "Build other tools on the fly: curl for web, python3 for logic, cat/grep for files. "
-    "Chain steps in one script. Zero preamble. No <think> tags. Just write the command.\n\n"
-    "--- PATTERNS (copy exact syntax) ---\n"
-    "Browser: python3 -c \"from playwright.sync_api import sync_playwright; "
-    "p=sync_playwright().start(); browser=p.chromium.launch(); page=browser.new_page(); "
-    "page.goto('URL'); print(page.title()); browser.close(); p.stop()\"\n"
-    "HTTP: curl -sL 'URL' | head -n 20\n"
-    "File write: echo 'DATA' > PATH\n"
-    "File read: cat PATH\n"
-    "--- END PATTERNS ---\n\n"
-)
-
-
 def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict], dict]:
     info = {"trimmed": False}
     if os.environ.get("CLAF_LOCAL_TRIM", "1") == "0":
-        return _LOCAL_CHARTER + (system_text or ""), msgs, info
+        return system_text, msgs, info
     max_sys = int(os.environ.get("CLAF_LOCAL_SYS_MAX_CHARS", "1500"))
     max_msgs = int(os.environ.get("CLAF_LOCAL_MAX_MSGS", "10"))
     sys_before = len(system_text or "")
     msgs_before = len(msgs)
 
-    # Prepend local charter so critical instructions survive trimming
-    charter_len = len(_LOCAL_CHARTER)
-    budget = max_sys - charter_len
-    if budget < 200:
-        budget = 200  # minimum viable context
-
-    if system_text and len(system_text) > budget:
-        system_text = _LOCAL_CHARTER + system_text[:budget].rstrip() + "\n[…system prompt trimmed for local speed…]"
-    else:
-        system_text = _LOCAL_CHARTER + (system_text or "")
+    if system_text and len(system_text) > max_sys:
+        # Keep the head — identity/role/standing instructions live at the top.
+        system_text = system_text[:max_sys].rstrip() + "\n[…system prompt trimmed for local speed…]"
 
     if len(msgs) > max_msgs:
         msgs = msgs[-max_msgs:]
@@ -1673,47 +1512,9 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
     return system_text, msgs, info
 
 
-class _CLAFError(Exception):
-    """Signals an HTTP error from _messages_compute so the thin wrapper
-    can return JSONResponse (non-streaming) or an SSE error event (streaming)
-    without the compute logic importing FastAPI response types."""
-    def __init__(self, status_code: int, detail: dict):
-        self.status_code = status_code
-        self.detail = detail
-
-
-async def _messages_stream(body: dict):
-    """Async SSE generator. Returns HTTP headers immediately, then sends
-    SSE keep-alive pings every 3 s while _messages_compute runs in a thread.
-    When computation finishes, bursts the real SSE events."""
-    yield ": keep-alive\n\n"
-    try:
-        response = await asyncio.to_thread(_messages_compute, body)
-    except _CLAFError as e:
-        yield (
-            f"event: error\n"
-            f"data: {json.dumps({'type': 'error', 'error': e.detail})}\n\n"
-        )
-        return
-    for event in _sse_events(response):
-        yield event
-
-
 @app.post("/v1/messages")
 async def messages(request: Request):
     body = await request.json()
-    if body.get("stream"):
-        return StreamingResponse(_messages_stream(body), media_type="text/event-stream")
-    try:
-        return await asyncio.to_thread(_messages_compute, body)
-    except _CLAFError as e:
-        return JSONResponse(status_code=e.status_code, content=e.detail)
-
-
-def _messages_compute(body: dict):
-    """Sync compute — runs in a thread pool. Returns the Anthropic response
-    dict on success. Raises _CLAFError for 4xx/5xx conditions so the caller
-    can translate to JSONResponse (non-stream) or SSE error (stream)."""
     _sys_probe = flatten_system(body.get("system"))
     _msgs_probe = body.get("messages", [])
     _last_user = ""
@@ -1746,7 +1547,15 @@ def _messages_compute(body: dict):
     # local for a reason; don't silently serve a request that needed cloud.
     if MODE == "local" and _is_hard_task(body):
         log("mode_lock", mode=MODE, reason="hard_task_in_local_mode")
-        raise _CLAFError(423, {"error": {"type": "mode_lock", "message": "local mode cannot satisfy hard-task escalation (set CLAF_MODE=hybrid or cloud)"}})
+        return JSONResponse(
+            status_code=423,
+            content={
+                "error": {
+                    "type": "mode_lock",
+                    "message": "local mode cannot satisfy hard-task escalation (set CLAF_MODE=hybrid or cloud)",
+                }
+            },
+        )
 
     provider = select_provider(body)
 
@@ -1767,17 +1576,11 @@ def _messages_compute(body: dict):
             trickle_reservation = throttle.reserve(5000, "flash", emergency=emergency)
             if trickle_reservation:
                 trickle_mode = "flash"
-                # Try ALL enabled cloud peers. If CLAF_PREFERRED_CLOUD is set
-                # (e.g. "anthropic"), that provider's tier is tried first;
-                # otherwise normal tier ordering (lowest tier wins).
-                _pref_name = os.environ.get("CLAF_PREFERRED_CLOUD", "").strip().lower()
-                _pref_tiers: tuple[int, ...] | None = None
-                if _pref_name:
-                    _pref_tiers = tuple(
-                        p.tier for p in PROVIDERS
-                        if p.pool == "cloud" and p.enabled and p.name.lower() == _pref_name
-                    )
-                provider = pick_cloud_peer(prefer_tiers=_pref_tiers if _pref_tiers else None)
+                # Prefer tier-1 (Ollama Cloud: SSH-signed, no per-token billing,
+                # not Anthropic-Tier-1-rate-limited). If tier-1 is unavailable,
+                # degrade to LOCAL ONLY — do NOT fall through to paid cloud peers.
+                # Paid Anthropic tiers are explicit escalation only (force_cloud/escalate).
+                provider = pick_cloud_peer(prefer_tiers=(1,))
                 if provider is None:
                     throttle.refund(trickle_reservation)
                     trickle_reservation = None
@@ -1825,10 +1628,26 @@ def _messages_compute(body: dict):
     # and cloud mode allows only pool="cloud".
     if MODE == "local" and provider.pool != "local":
         log("mode_lock", mode=MODE, attempted=provider.name, pool=provider.pool)
-        raise _CLAFError(423, {"error": {"type": "mode_lock", "message": f"local mode refuses non-local provider {provider.name}"}})
+        return JSONResponse(
+            status_code=423,
+            content={
+                "error": {
+                    "type": "mode_lock",
+                    "message": f"local mode refuses non-local provider {provider.name}",
+                }
+            },
+        )
     if MODE == "cloud" and provider.pool == "local":
         log("mode_lock", mode=MODE, attempted=provider.name, pool=provider.pool)
-        raise _CLAFError(423, {"error": {"type": "mode_lock", "message": f"cloud mode bypasses local provider {provider.name}"}})
+        return JSONResponse(
+            status_code=423,
+            content={
+                "error": {
+                    "type": "mode_lock",
+                    "message": f"cloud mode bypasses local provider {provider.name}",
+                }
+            },
+        )
 
     # Dual-local routing: if a vision model is configured AND request has
     # image content, override the model used for this single call. The
@@ -1919,23 +1738,16 @@ def _messages_compute(body: dict):
                 _sys, _msgs, _trim_info = _trim_for_local(_sys, _msgs)
                 if _trim_info.get("trimmed"):
                     log("local_prompt_trimmed", **_trim_info)
-                # CODE-AS-TOOLS: Don't pass native tools to the local model.
-                # _LOCAL_CHARTER trains it to WRITE PLAIN TEXT commands, but
-                # Ollama's native tool-calling forces a different output format.
-                # The conflict causes qwen2.5:3b to emit empty content.
-                # Instead: no tools → model writes bash in plain text → CLAF
-                # extracts markdown fences or single-line commands as tool_use.
-                # Override: set CLAF_LOCAL_CODE_TOOLS=0 to revert to old count-based capping.
-                if os.environ.get("CLAF_LOCAL_CODE_TOOLS", "1") == "1":
-                    if _tools:
-                        log("local_tools_code_as_tools", tools_before=len(_tools), tools_after=0, kept=[])
-                    _tools_eff = None
-                else:
-                    # Legacy count-based capping
-                    _max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0"))
-                    if _tools and len(_tools) > _max_tools:
-                        log("local_tools_capped", tools_before=len(_tools), tools_after=_max_tools)
-                        _tools_eff = _tools[:_max_tools] if _max_tools > 0 else None
+                # Cap the tools array for local. A full Claude Code request ships
+                # dozens of tool schemas (thousands of tokens) that pack the 4096
+                # context window — on a CPU 3B that is ~4 min of prompt eval per
+                # turn, even for "hi". CLAF_LOCAL_MAX_TOOLS bounds how many we send
+                # (0 = strip entirely → fast chat). Raise it when you want the
+                # local model to actually call tools.
+                _max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0"))
+                if _tools and len(_tools) > _max_tools:
+                    log("local_tools_capped", tools_before=len(_tools), tools_after=_max_tools)
+                    _tools_eff = _tools[:_max_tools] if _max_tools > 0 else None
             if _sys:
                 _msgs.insert(0, {"role": "system", "content": _sys})
             _blocks, _usage, _tool_use = ollama_chat(p, _msgs, _tools_eff, max_tokens=body.get("max_tokens"))
@@ -2082,43 +1894,6 @@ def _messages_compute(body: dict):
                 _scraped, _scraped_tu = parse_directives_to_content(_text0, _tools or [])
                 if _scraped_tu:
                     _blocks, _tool_use = _scraped, True
-
-        # Model wrote bash in markdown blocks or plain text commands
-        # (qwen2.5:3b code-as-tools path). Extract as tool_use even when
-        # native tools were passed but the model chose plain text instead.
-        if not _tool_use:
-            _text0 = "".join(b.get("text", "") for b in _blocks
-                             if isinstance(b, dict) and b.get("type") == "text")
-            if _text0:
-                # Try markdown fenced blocks first
-                _MD_FENCE = re.compile(
-                    r"^\s*```(?:bash|sh|shell)\n(.*?)```\s*$",
-                    re.DOTALL | re.MULTILINE,
-                )
-                for m in _MD_FENCE.finditer(_text0):
-                    cmd = m.group(1).strip()
-                    if cmd:
-                        _blocks.append({
-                            "type": "tool_use",
-                            "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
-                            "name": "bash",
-                            "input": {"command": cmd},
-                        })
-                        _tool_use = True
-                # Fallback: single-line text that looks like a shell command
-                if not _tool_use:
-                    _lines = [ln.strip() for ln in _text0.strip().splitlines() if ln.strip()]
-                    if len(_lines) == 1:
-                        ln = _lines[0]
-                        if any(ln.startswith(p) for p in ("python3 ", "curl ", "ls ", "cat ", "grep ", "find ", "bash ", "sh ", "echo ", "mkdir ", "rm ", "cp ", "mv ", "cd ", "pwd", "whoami", "ps ", "top", "df ", "du ", "head ", "tail ", "sort ", "uniq ", "wc ", "tar ", "zip ", "unzip ", "git ", "npm ", "pip ", "docker ", "sudo ", "apt ", "yum ", "systemctl ", "journalctl ", "ssh ", "scp ", "rsync ", "wget ", "ping ", "netstat ", "ss ", "lsof ", "fuser ", "kill ", "pkill ", "pgrep ", "nice ", "nohup ", "screen ", "tmux ", "vi ", "vim ", "nano ", "emacs ", "less ", "more ")):
-                            _blocks.append({
-                                "type": "tool_use",
-                                "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
-                                "name": "bash",
-                                "input": {"command": ln},
-                            })
-                            _tool_use = True
-
         _text = "".join(b.get("text", "") for b in _blocks
                         if isinstance(b, dict) and b.get("type") == "text")
 
@@ -2142,78 +1917,7 @@ def _messages_compute(body: dict):
                 # connection) hangs until it finishes, surfacing as ConnectionRefused.
                 # asyncio.to_thread keeps the loop responsive; Ollama still serializes
                 # inference, but the proxy no longer goes dark while it works.
-                content_blocks, usage, used_react, assistant_text, tool_use = _dispatch_provider(provider)
-
-                # ─── LOCAL AUTO-RETRY LOOP ─────────────────────────────────────
-                # For local code-as-tools: when the model emits a bash command,
-                # execute it immediately. On non-zero exit, feed stderr back as
-                # a tool_result and let the model retry (max 3). This corrects
-                # syntax errors, quoting issues, and wrong API calls without
-                # round-tripping through the client.
-                # Opt-in: CLAF_LOCAL_AUTO_RETRY=N (default 0 = off).
-                # ────────────────────────────────────────────────────────────────
-                _max_auto_retry = int(os.environ.get("CLAF_LOCAL_AUTO_RETRY", "0"))
-                if _max_auto_retry > 0 and provider.pool == "local" and tool_use:
-                    for _retry_turn in range(_max_auto_retry):
-                        _bash_blocks = [
-                            b for b in content_blocks
-                            if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "bash"
-                        ]
-                        if not _bash_blocks:
-                            break
-
-                        _all_ok = True
-                        _tool_results = []
-                        for _b in _bash_blocks:
-                            _cmd = (_b.get("input") or {}).get("command", "")
-                            if not _cmd:
-                                continue
-                            try:
-                                _proc = subprocess.run(
-                                    _cmd, shell=True, capture_output=True, text=True, timeout=60
-                                )
-                            except Exception as _exec_err:
-                                _proc = type("obj", (object,), {
-                                    "returncode": 1, "stdout": "", "stderr": str(_exec_err)
-                                })()
-                            _out = (_proc.stdout or "") + (_proc.stderr or "")
-                            if len(_out) > 2000:
-                                _out = _out[:2000] + "\n[…truncated…]"
-                            _tool_results.append({
-                                "tool_use_id": _b.get("id", "toolu_claf_unknown"),
-                                "output": _out,
-                                "exit_code": _proc.returncode,
-                            })
-                            if _proc.returncode != 0:
-                                _all_ok = False
-
-                        if _all_ok:
-                            break  # all commands succeeded
-
-                        # Build retry messages: append assistant turn + tool_results
-                        _retry_msgs = list(body.get("messages", []))
-                        _retry_msgs.append({
-                            "role": "assistant",
-                            "content": content_blocks,
-                        })
-                        _retry_msgs.append({
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": tr["tool_use_id"],
-                                    "content": f"ERROR (exit {tr['exit_code']}):\n{tr['output']}",
-                                    "is_error": True,
-                                }
-                                for tr in _tool_results
-                            ],
-                        })
-                        body["messages"] = _retry_msgs
-                        log("local_auto_retry", retry=_retry_turn + 1, total=_max_auto_retry)
-
-                        # Re-call the model with error context
-                        content_blocks, usage, used_react, assistant_text, tool_use = _dispatch_provider(provider)
-
+                content_blocks, usage, used_react, assistant_text, tool_use = await asyncio.to_thread(_dispatch_provider, provider)
                 break  # success
             except Exception as _call_exc:
                 # Any CLOUD peer failure (429 rate-limit, 413 payload-too-large,
@@ -2262,7 +1966,15 @@ def _messages_compute(body: dict):
             throttle.refund(trickle_reservation)
             log("trickle_refund", reservation=trickle_reservation, reason="provider_error")
         _pname = getattr(provider, 'name', 'all-peers-exhausted')
-        raise _CLAFError(502, {"error": {"type": "api_error", "message": f"{_pname} call failed: {e}"}})
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "api_error",
+                    "message": f"{_pname} call failed: {e}",
+                }
+            },
+        )
 
     # Tap polish — runs after the local draft returns, sends the largest
     # fenced snippet to a cheap cloud peer with an intent-specific template,
@@ -2300,6 +2012,11 @@ def _messages_compute(body: dict):
     )
     if trickle_reservation:
         throttle.commit(trickle_reservation)
+    if body.get("stream"):
+        return StreamingResponse(
+            _sse_events(response),
+            media_type="text/event-stream",
+        )
     return response
 
 
