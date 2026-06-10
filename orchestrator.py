@@ -2034,11 +2034,13 @@ if __name__ == "__main__":
         import threading
         def _prewarm():
             base = OLLAMA_URL.replace("/api/chat", "")
+            ctx = int(os.environ.get("CLAF_OLLAMA_CTX", "2048"))
             try:
                 with httpx.Client(timeout=180.0) as c:
                     c.post(f"{base}/api/generate", json={
                         "model": LOCAL_MODEL, "prompt": "hi", "stream": False,
                         "keep_alive": -1,
+                        "options": {"num_ctx": ctx},
                     })
                 print(f"[prewarm] {LOCAL_MODEL} loaded and pinned in memory (keep_alive=-1)")
             except Exception as e:
