@@ -1412,6 +1412,13 @@ async def chat_completions(request: Request):
     # Build messages
     system_text = flatten_system(anthropic_body.get("system"))
     _msgs = messages_from_anthropic(anthropic_body.get("messages", []), flavor="ollama" if provider.kind == "ollama" else "openai")
+
+    # Trim for local Ollama — same guard as /v1/messages path
+    if provider.kind == "ollama" and getattr(provider, "pool", "") == "local":
+        system_text, _msgs, _trim_info = _trim_for_local(system_text or "", _msgs)
+        if _trim_info.get("trimmed"):
+            log("local_prompt_trimmed", **_trim_info)
+
     if system_text:
         _msgs.insert(0, {"role": "system", "content": system_text})
 
