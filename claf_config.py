@@ -379,6 +379,7 @@ def _select_mode(body: dict):
     Triggers:
       - metadata.force_cloud=True  → flash (full cloud handoff, any tier)
       - metadata.escalate=True     → flash (operator-requested escalation)
+      - metadata.emergency=True    → flash (crisis routing; also draws from emergency throttle pool)
       - hard task (_is_hard_task)  → flash (auto-escalation)
       - anything else              → local (default, fast, free)
     """
@@ -387,6 +388,8 @@ def _select_mode(body: dict):
         return "flash", {"reason": "force_cloud_metadata"}
     if meta.get("escalate") is True:
         return "flash", {"reason": "escalate_metadata"}
+    if meta.get("emergency") is True:
+        return "flash", {"reason": "emergency_metadata"}
     if _is_hard_task(body):
         return "flash", {"reason": "hard_task_auto_escalate"}
     return "local", {"reason": "default_local_first"}
