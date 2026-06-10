@@ -1673,9 +1673,47 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
     return system_text, msgs, info
 
 
+class _CLAFError(Exception):
+    """Signals an HTTP error from _messages_compute so the thin wrapper
+    can return JSONResponse (non-streaming) or an SSE error event (streaming)
+    without the compute logic importing FastAPI response types."""
+    def __init__(self, status_code: int, detail: dict):
+        self.status_code = status_code
+        self.detail = detail
+
+
+async def _messages_stream(body: dict):
+    """Async SSE generator. Returns HTTP headers immediately, then sends
+    SSE keep-alive pings every 3 s while _messages_compute runs in a thread.
+    When computation finishes, bursts the real SSE events."""
+    yield ": keep-alive\n\n"
+    try:
+        response = await asyncio.to_thread(_messages_compute, body)
+    except _CLAFError as e:
+        yield (
+            f"event: error\n"
+            f"data: {json.dumps({'type': 'error', 'error': e.detail})}\n\n"
+        )
+        return
+    for event in _sse_events(response):
+        yield event
+
+
 @app.post("/v1/messages")
 async def messages(request: Request):
     body = await request.json()
+    if body.get("stream"):
+        return StreamingResponse(_messages_stream(body), media_type="text/event-stream")
+    try:
+        return await asyncio.to_thread(_messages_compute, body)
+    except _CLAFError as e:
+        return JSONResponse(status_code=e.status_code, content=e.detail)
+
+
+def _messages_compute(body: dict):
+    """Sync compute — runs in a thread pool. Returns the Anthropic response
+    dict on success. Raises _CLAFError for 4xx/5xx conditions so the caller
+    can translate to JSONResponse (non-stream) or SSE error (stream)."""
     _sys_probe = flatten_system(body.get("system"))
     _msgs_probe = body.get("messages", [])
     _last_user = ""
@@ -1708,15 +1746,7 @@ async def messages(request: Request):
     # local for a reason; don't silently serve a request that needed cloud.
     if MODE == "local" and _is_hard_task(body):
         log("mode_lock", mode=MODE, reason="hard_task_in_local_mode")
-        return JSONResponse(
-            status_code=423,
-            content={
-                "error": {
-                    "type": "mode_lock",
-                    "message": "local mode cannot satisfy hard-task escalation (set CLAF_MODE=hybrid or cloud)",
-                }
-            },
-        )
+        raise _CLAFError(423, {"error": {"type": "mode_lock", "message": "local mode cannot satisfy hard-task escalation (set CLAF_MODE=hybrid or cloud)"}})
 
     provider = select_provider(body)
 
@@ -1795,26 +1825,10 @@ async def messages(request: Request):
     # and cloud mode allows only pool="cloud".
     if MODE == "local" and provider.pool != "local":
         log("mode_lock", mode=MODE, attempted=provider.name, pool=provider.pool)
-        return JSONResponse(
-            status_code=423,
-            content={
-                "error": {
-                    "type": "mode_lock",
-                    "message": f"local mode refuses non-local provider {provider.name}",
-                }
-            },
-        )
+        raise _CLAFError(423, {"error": {"type": "mode_lock", "message": f"local mode refuses non-local provider {provider.name}"}})
     if MODE == "cloud" and provider.pool == "local":
         log("mode_lock", mode=MODE, attempted=provider.name, pool=provider.pool)
-        return JSONResponse(
-            status_code=423,
-            content={
-                "error": {
-                    "type": "mode_lock",
-                    "message": f"cloud mode bypasses local provider {provider.name}",
-                }
-            },
-        )
+        raise _CLAFError(423, {"error": {"type": "mode_lock", "message": f"cloud mode bypasses local provider {provider.name}"}})
 
     # Dual-local routing: if a vision model is configured AND request has
     # image content, override the model used for this single call. The
@@ -2128,7 +2142,7 @@ async def messages(request: Request):
                 # connection) hangs until it finishes, surfacing as ConnectionRefused.
                 # asyncio.to_thread keeps the loop responsive; Ollama still serializes
                 # inference, but the proxy no longer goes dark while it works.
-                content_blocks, usage, used_react, assistant_text, tool_use = await asyncio.to_thread(_dispatch_provider, provider)
+                content_blocks, usage, used_react, assistant_text, tool_use = _dispatch_provider(provider)
 
                 # ─── LOCAL AUTO-RETRY LOOP ─────────────────────────────────────
                 # For local code-as-tools: when the model emits a bash command,
@@ -2198,7 +2212,7 @@ async def messages(request: Request):
                         log("local_auto_retry", retry=_retry_turn + 1, total=_max_auto_retry)
 
                         # Re-call the model with error context
-                        content_blocks, usage, used_react, assistant_text, tool_use = await asyncio.to_thread(_dispatch_provider, provider)
+                        content_blocks, usage, used_react, assistant_text, tool_use = _dispatch_provider(provider)
 
                 break  # success
             except Exception as _call_exc:
@@ -2248,15 +2262,7 @@ async def messages(request: Request):
             throttle.refund(trickle_reservation)
             log("trickle_refund", reservation=trickle_reservation, reason="provider_error")
         _pname = getattr(provider, 'name', 'all-peers-exhausted')
-        return JSONResponse(
-            status_code=502,
-            content={
-                "error": {
-                    "type": "api_error",
-                    "message": f"{_pname} call failed: {e}",
-                }
-            },
-        )
+        raise _CLAFError(502, {"error": {"type": "api_error", "message": f"{_pname} call failed: {e}"}})
 
     # Tap polish — runs after the local draft returns, sends the largest
     # fenced snippet to a cheap cloud peer with an intent-specific template,
@@ -2294,11 +2300,6 @@ async def messages(request: Request):
     )
     if trickle_reservation:
         throttle.commit(trickle_reservation)
-    if body.get("stream"):
-        return StreamingResponse(
-            _sse_events(response),
-            media_type="text/event-stream",
-        )
     return response
 
 
