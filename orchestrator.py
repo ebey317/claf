@@ -1789,8 +1789,30 @@ async def messages(request: Request):
                 # local model to actually call tools.
                 _max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0"))
                 if _tools and len(_tools) > _max_tools:
-                    log("local_tools_capped", tools_before=len(_tools), tools_after=_max_tools)
-                    _tools_eff = _tools[:_max_tools] if _max_tools > 0 else None
+                    # Use same priority sort as cloud — Task tools first (tiny
+                    # schemas), then sensei tools, then everything else. The
+                    # default slice [:_max_tools] takes the FIRST tools by index
+                    # which are the giant native CC tools (Bash=600+ tokens,
+                    # Read/Edit/Write similar). 8 native tools = ~5000 tokens,
+                    # leaving nothing for output on 8K CTX. Priority sort keeps
+                    # total tool budget under ~1500 tokens for 8 small tools.
+                    if _max_tools > 0:
+                        _LOCAL_PRIO = [
+                            "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
+                            "mcp__sensei__read_full", "mcp__sensei__screenshot",
+                            "mcp__sensei__click", "mcp__sensei__js_eval",
+                            "mcp__sensei__fill", "mcp__sensei__browse",
+                            "mcp__sensei__scroll", "mcp__sensei__tab_create",
+                        ]
+                        _tmap = {t.get("name"): t for t in _tools}
+                        _prio = [_tmap[n] for n in _LOCAL_PRIO if n in _tmap]
+                        _prio_names = {t.get("name") for t in _prio}
+                        _rest = [t for t in _tools if t.get("name") not in _prio_names]
+                        _tools_eff = (_prio + _rest)[:_max_tools]
+                    else:
+                        _tools_eff = None
+                    log("local_tools_capped", tools_before=len(_tools), tools_after=len(_tools_eff) if _tools_eff else 0,
+                        first_tools=[t.get("name") for t in (_tools_eff or [])][:4])
             if _sys:
                 _msgs.insert(0, {"role": "system", "content": _sys})
             _blocks, _usage, _tool_use = ollama_chat(p, _msgs, _tools_eff, max_tokens=body.get("max_tokens"))
