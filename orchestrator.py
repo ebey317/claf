@@ -144,6 +144,7 @@ if _KEYS_FILE.exists():
         pass  # if keystore is malformed, fall back to whatever env already has
 
 import sensei_supervisor as supervisor  # ReAct XML tool-call translator (off-grid MCP)
+from task_state import load_task, format_task_for_injection
 from claf_config import (
     MODE, PROVIDERS, describe, select_provider, _is_hard_task, _is_action_turn,
     _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
@@ -2046,11 +2047,15 @@ async def messages(request: Request):
             _sys = system_text
             _tools_eff = _tools
             if p.pool == "local":
+                # Inject active task state first — survives head-preserving trim.
+                # Model reads this at turn start and knows exactly where the task is.
+                _task = load_task()
+                _task_block = format_task_for_injection(_task) if _task else ""
                 # Prepend surgical charter slices (core + request-relevant).
                 # Cuts injection from 6237 → ~2600-3200 chars, freeing context
                 # for CLAUDE.md identity content after trim.
                 _charter_local = _load_charter_slices(body)
-                _sys = _charter_local + "\n\n" + (_sys or "")
+                _sys = (_task_block + "\n\n" if _task_block else "") + _charter_local + "\n\n" + (_sys or "")
                 _sys, _msgs, _trim_info = _trim_for_local(_sys, _msgs)
                 if _trim_info.get("trimmed"):
                     log("local_prompt_trimmed", **_trim_info)
