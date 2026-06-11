@@ -1650,6 +1650,40 @@ async def messages(request: Request):
 
     requested_model = body.get("model", "claude-sonnet-4-6")
 
+    # Hard loop-turn cap. Count assistant messages that contain at least one
+    # tool_use block — each is one "loop turn". If the history already has
+    # >= CLAF_MAX_LOOP_TURNS such turns, force end_turn now instead of
+    # dispatching to the model. Prevents "running wild" when the charter's
+    # NEVER-STOP rule keeps the agent looping past task completion.
+    _max_loop_turns = int(os.environ.get("CLAF_MAX_LOOP_TURNS", "0") or "0")
+    if _max_loop_turns > 0:
+        _tool_cycles = sum(
+            1 for _m in _msgs_probe
+            if _m.get("role") == "assistant"
+            and isinstance(_m.get("content"), list)
+            and any(isinstance(_b, dict) and _b.get("type") == "tool_use"
+                    for _b in _m["content"])
+        )
+        if _tool_cycles >= _max_loop_turns:
+            log("loop_turn_cap_hit", turns=_tool_cycles, max=_max_loop_turns)
+            _cap_text = (
+                f"[CLAF: loop cap reached ({_tool_cycles}/{_max_loop_turns} tool turns). "
+                "Summarize completed work and stop.]"
+            )
+            _cap_resp = {
+                "id": f"msg_cap_{_tool_cycles}",
+                "type": "message",
+                "role": "assistant",
+                "model": requested_model,
+                "content": [{"type": "text", "text": _cap_text}],
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 0, "output_tokens": len(_cap_text.split())},
+            }
+            if body.get("stream"):
+                return StreamingResponse(_sse_events(_cap_resp), media_type="text/event-stream")
+            return JSONResponse(_cap_resp)
+
     # LOCAL mode + hard-task signal = explicit refusal. The operator picked
     # local for a reason; don't silently serve a request that needed cloud.
     if MODE == "local" and _is_hard_task(body):
