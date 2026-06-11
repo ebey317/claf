@@ -774,6 +774,19 @@ def anthropic_direct_chat(provider, body: dict) -> tuple[list, dict]:
         "input_tokens": data.get("usage", {}).get("input_tokens", 0),
         "output_tokens": data.get("usage", {}).get("output_tokens", 0),
     }
+    # Warn when Anthropic returns a suspiciously empty response (1-token /
+    # 0-char) so the root cause is visible in the log rather than silent.
+    _out_text = "".join(b.get("text", "") for b in content_blocks
+                        if isinstance(b, dict) and b.get("type") == "text")
+    if usage["output_tokens"] <= 2 and not _out_text:
+        log("anthropic_empty_response",
+            output_tokens=usage["output_tokens"],
+            stop_reason=data.get("stop_reason"),
+            content_block_types=[b.get("type") for b in content_blocks if isinstance(b, dict)],
+            max_tokens_sent=payload.get("max_tokens"),
+            model=payload.get("model"),
+            tool_count=len(payload.get("tools") or []),
+            message_count=len(payload.get("messages") or []))
     return content_blocks, usage
 
 
@@ -1715,6 +1728,17 @@ async def messages(request: Request):
     # tier list (skipping failed providers) until one succeeds or the pool
     # is exhausted. Local providers are never in the fallback loop — they
     # don't rate-limit in the same way and a local 429 would be a bug.
+    #
+    # Tier cap: flash = tier 1 only (free Groq-class peers); tap = tier 1-3
+    # (no paid Anthropic); explicit escalation = unbounded. Without this, a
+    # flash request cascading through Groq 429 → Cerebras 429 → OpenRouter 402
+    # would land on Anthropic (paid tier 4), run the operator's Console budget,
+    # and return 1 token when the body is malformed for that path.
+    _max_fallback_tier: int = (
+        1 if trickle_mode == "flash"
+        else 3 if trickle_mode == "tap"
+        else 999  # explicit cloud escalation — all tiers allowed
+    )
     _rate_limit_failed: set[str] = set()
     content_blocks: list[dict] = []
     usage = {"input_tokens": 0, "output_tokens": 0}
@@ -1932,10 +1956,11 @@ async def messages(request: Request):
                 log("cloud_peer_fallback", failed_provider=provider.name,
                     failed_tier=provider.tier, status=_status,
                     failed_so_far=sorted(_rate_limit_failed))
-                provider = next_cloud_peer(_rate_limit_failed)
+                provider = next_cloud_peer(_rate_limit_failed, max_tier=_max_fallback_tier)
                 if provider is None:
-                    # No more cloud peers. In hybrid/local mode, degrade to the
-                    # LOCAL Ollama provider — it never rate-limits and is the
+                    # No more cloud peers within the allowed tier budget. In
+                    # hybrid/local mode, degrade to LOCAL Ollama — it never
+                    # rate-limits and is the
                     # whole point of hybrid. Only error out if no local exists
                     # (cloud-only mode).
                     _local = next(
