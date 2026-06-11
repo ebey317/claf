@@ -93,28 +93,28 @@ def _cloud_peers() -> list[Provider]:
     Tier numbers are a configurable ordering hint, not a quality ranking."""
     return [
         Provider(
-            tier=1, name="groq", pool="cloud", kind="openai_compat",
-            model="llama-3.1-8b-instant",
-            url="https://api.groq.com/openai/v1/chat/completions",
-            env_key="GROQ_API_KEY",
-            enabled=_env_present("GROQ_API_KEY"),
-            notes="WORKHORSE — free tier, fast, 14400 req/day (8B). Primary escalation target.",
-            max_tools=2,         # 2 tools ≈ 10KB body (3 Task tools = 15.2KB, still hits 413)
-            max_sys_chars=6500,  # charter (~3.1K) + ~3.4K real context; body stays ~10K << 30K
-            max_msgs=6,          # cap history to prevent 413 from large tool_result blocks
-            max_msg_content=500, # each message trimmed to 500 chars; tool_results can be huge
-        ),
-        Provider(
-            tier=2, name="cerebras", pool="cloud", kind="openai_compat",
+            tier=1, name="cerebras", pool="cloud", kind="openai_compat",
             model="gpt-oss-120b",
             url="https://api.cerebras.ai/v1/chat/completions",
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
-            notes="ultra-fast inference; gpt-oss-120b via Cerebras.",
+            notes="PRIMARY flash — ultra-fast, no 413 issues at 4 tools.",
             max_tools=4,
             max_sys_chars=6000,
             max_msgs=6,
             max_msg_content=500,
+        ),
+        Provider(
+            tier=2, name="groq", pool="cloud", kind="openai_compat",
+            model="llama-3.1-8b-instant",
+            url="https://api.groq.com/openai/v1/chat/completions",
+            env_key="GROQ_API_KEY",
+            enabled=_env_present("GROQ_API_KEY"),
+            notes="text-only fallback — 413s on any tool payload, 14400 req/day.",
+            max_tools=0,         # body too large even at 2 tools (11.6KB hits 413)
+            max_sys_chars=3000,
+            max_msgs=4,
+            max_msg_content=400,
         ),
         Provider(
             tier=3, name="openrouter", pool="cloud", kind="openai_compat",
