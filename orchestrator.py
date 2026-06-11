@@ -635,6 +635,18 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
     if tools:
         payload["tools"] = _anthropic_tools_to_ollama(tools)
 
+    # Debug: log actual payload sizes going to Ollama so we can diagnose
+    # why prompt_eval_count hits CTX even after trimming.
+    if not is_cloud:
+        _msg_sizes = [{"role": m.get("role"), "chars": len(str(m.get("content","")))} for m in messages]
+        log("ollama_payload_debug",
+            msg_count=len(messages),
+            tool_count=len(tools) if tools else 0,
+            msg_sizes=_msg_sizes,
+            total_msg_chars=sum(s["chars"] for s in _msg_sizes),
+            num_ctx=num_ctx,
+            num_predict=num_predict)
+
     lock = _OLLAMA_CLOUD_LOCK if is_cloud else None
     with (lock if lock else contextlib.nullcontext()):
         with httpx.Client(timeout=300.0) as client:
