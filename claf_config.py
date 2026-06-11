@@ -104,7 +104,9 @@ def _cloud_peers() -> list[Provider]:
             max_tools=14,
             max_sys_chars=6000,
             max_msgs=6,
-            max_msg_content=500,
+            # 500 beheaded /command skill prompts and hook-prefixed user turns
+            # (live test 2026-06-11). 64K ctx: 6 msgs × 3000 ≈ 4.5K tokens — safe.
+            max_msg_content=3000,
         ),
         Provider(
             tier=2, name="groq", pool="cloud", kind="openai_compat",
