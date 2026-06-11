@@ -275,6 +275,92 @@ def _load_cloud_charter() -> str:
     return _CHARTER_FALLBACK
 
 
+# Charter slice loader — surgical context injection for local models.
+# Cloud peers still use the full cloud_charter.md via _load_cloud_charter().
+# Local Ollama gets only the slices relevant to the current request type,
+# cutting the system prompt from 6237 → ~2600-3200 chars per turn.
+_CHARTER_DIR = Path(__file__).parent / "charter"
+_charter_slice_cache: dict[str, dict] = {}
+
+
+def _load_charter_slice(name: str) -> str:
+    """Load one charter slice file with mtime caching. Returns "" on missing."""
+    path = _CHARTER_DIR / f"{name}.md"
+    try:
+        st = path.stat()
+        cached = _charter_slice_cache.get(name, {})
+        if cached.get("mtime") != st.st_mtime:
+            text = path.read_text(encoding="utf-8").strip()
+            _charter_slice_cache[name] = {"mtime": st.st_mtime, "text": text}
+        return _charter_slice_cache[name]["text"]
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _load_charter_slices(body: dict) -> str:
+    """Return charter_core + relevant slices based on what tools are present
+    and what signals appear in the last user message.
+
+    Always: charter_core
+    + charter_browser when sensei tools are in the request
+    + charter_tasks when TaskList/Create/Update or task-signal words appear
+    + charter_debug when error signals or tool failures are in history
+
+    Falls back to full cloud_charter.md if charter/ directory is missing.
+    """
+    core = _load_charter_slice("charter_core")
+    if not core:
+        return _load_cloud_charter()
+
+    slices = [core]
+
+    # Last user message text for signal scoring
+    last_user = ""
+    for m in reversed(body.get("messages", [])):
+        if m.get("role") == "user":
+            c = m.get("content", "")
+            if isinstance(c, list):
+                c = " ".join(b.get("text", "") for b in c if isinstance(b, dict))
+            last_user = str(c).lower()
+            break
+
+    tool_names = {t.get("name", "") for t in (body.get("tools") or [])}
+
+    # Browser slice: sensei tools present in request
+    if any("mcp__sensei__" in n for n in tool_names):
+        s = _load_charter_slice("charter_browser")
+        if s:
+            slices.append(s)
+
+    # Tasks slice: Task* tools present OR task words in prompt
+    _task_words = {"tasklist", "task list", "task", "backlog", "claim",
+                   "batch", "memory", "write a memory", "create a memory"}
+    if (any(n.startswith("Task") for n in tool_names)
+            or any(w in last_user for w in _task_words)):
+        s = _load_charter_slice("charter_tasks")
+        if s:
+            slices.append(s)
+
+    # Debug slice: error signals in prompt or failed tool_results in history
+    _debug_words = {"error", "fail", "broken", "debug", "log", "not working",
+                    "why", "check log", "what went wrong", "diagnose"}
+    _has_tool_error = any(
+        isinstance(m.get("content"), list)
+        and any(isinstance(b, dict) and b.get("type") == "tool_result"
+                and b.get("is_error") for b in m["content"])
+        for m in body.get("messages", []) if m.get("role") == "user"
+    )
+    if _has_tool_error or any(w in last_user for w in _debug_words):
+        s = _load_charter_slice("charter_debug")
+        if s:
+            slices.append(s)
+
+    log("charter_slices_selected",
+        slices=[s[:20] for s in slices],
+        total_chars=sum(len(s) for s in slices))
+    return "\n\n---\n\n".join(slices) + "\n\n"
+
+
 # FULL MEMORY PACK — the complete memory corpus (every *.md file, full bodies)
 # injected into full_context peers so the hybrid KNOWS the operator the same way
 # the primary agent does. The memory is what makes it personal; a subset is not
@@ -1932,10 +2018,10 @@ async def messages(request: Request):
             _sys = system_text
             _tools_eff = _tools
             if p.pool == "local":
-                # Prepend operational charter so local model has COMMAND MODE
-                # rules, forbidden phrases, and self-debug paths. Charter lives
-                # at the HEAD so trim keeps it and drops the CLAUDE.md tail.
-                _charter_local = _load_cloud_charter()
+                # Prepend surgical charter slices (core + request-relevant).
+                # Cuts injection from 6237 → ~2600-3200 chars, freeing context
+                # for CLAUDE.md identity content after trim.
+                _charter_local = _load_charter_slices(body)
                 _sys = _charter_local + "\n\n" + (_sys or "")
                 _sys, _msgs, _trim_info = _trim_for_local(_sys, _msgs)
                 if _trim_info.get("trimmed"):
