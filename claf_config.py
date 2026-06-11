@@ -763,17 +763,27 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
         "filesystem": sum(1 for s in _FILE_SIGNALS    if s in prompt),
         "tasks":      sum(1 for s in _TASK_SIGNALS    if s in prompt),
     }
-    best_group = max(scores, key=lambda k: scores[k])
-    if scores[best_group] == 0:
-        best_group = "core"
 
+    # Multi-group selection: if both browser AND filesystem signals present,
+    # include both groups. Otherwise pick the highest-scoring group.
+    # This allows "create a file and visit a website" to work in one loop.
     selected_names: list[str] = []
-    for name in TOOL_GROUPS.get(best_group, []):
-        if name in tool_map and name not in selected_names:
-            selected_names.append(name)
-    for name in TOOL_GROUPS["core"]:
-        if name in tool_map and name not in selected_names:
-            selected_names.append(name)
+    if scores["browser"] > 0 and scores["filesystem"] > 0:
+        # Both signals present: combine browser + filesystem + core
+        for name in TOOL_GROUPS["browser"] + TOOL_GROUPS["filesystem"] + TOOL_GROUPS["core"]:
+            if name in tool_map and name not in selected_names:
+                selected_names.append(name)
+    else:
+        # Single dominant group: use winner-takes-all
+        best_group = max(scores, key=lambda k: scores[k])
+        if scores[best_group] == 0:
+            best_group = "core"
+        for name in TOOL_GROUPS.get(best_group, []):
+            if name in tool_map and name not in selected_names:
+                selected_names.append(name)
+        for name in TOOL_GROUPS["core"]:
+            if name in tool_map and name not in selected_names:
+                selected_names.append(name)
 
     if not selected_names:
         return all_tools[:max_tools]
