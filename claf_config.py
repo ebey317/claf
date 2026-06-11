@@ -597,22 +597,33 @@ _TASK_SIGNALS = {
 def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None":
     """Pick the right tool group for this request.
 
-    Returns a capped subset of all_tools, or None when CLAF_LOCAL_MAX_TOOLS=0.
-    Never sends all 32 tools (6400+ tokens). Sends 4-6 tools from the group
-    that matches the request content (~800-1200 tokens). Core tools
-    (TaskList, Read, Bash) are always appended regardless of group."""
+    If the caller already sent a small set (len ≤ max_tools), pass all of
+    them through unchanged — covers agent_runner's custom tools (bash/read_file/
+    write_file/done) that should never be stripped.
+
+    For large sets (Claude Code's 30+ tools), scan the prompt and return the
+    matching group + core tools capped at max_tools (~1000 tokens vs 6400+).
+    Falls back to first max_tools if group lookup finds nothing.
+
+    Returns None when CLAF_LOCAL_MAX_TOOLS=0 (explicit strip-tools mode)."""
     import os
     max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6"))
     if max_tools == 0:
         return None
+    if not all_tools:
+        return None
 
-    tool_map = {t.get("name", ""): t for t in (all_tools or [])}
+    # Small sets already within budget — pass through untouched.
+    if len(all_tools) <= max_tools:
+        return all_tools
+
+    tool_map = {t.get("name", ""): t for t in all_tools}
 
     prompt = _flatten_prompt_text(body).lower()
     scores = {
-        "browser": sum(1 for s in _BROWSER_SIGNALS if s in prompt),
-        "filesystem": sum(1 for s in _FILE_SIGNALS if s in prompt),
-        "tasks": sum(1 for s in _TASK_SIGNALS if s in prompt),
+        "browser":    sum(1 for s in _BROWSER_SIGNALS if s in prompt),
+        "filesystem": sum(1 for s in _FILE_SIGNALS    if s in prompt),
+        "tasks":      sum(1 for s in _TASK_SIGNALS    if s in prompt),
     }
     best_group = max(scores, key=lambda k: scores[k])
     if scores[best_group] == 0:
@@ -626,5 +637,8 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
         if name in tool_map and name not in selected_names:
             selected_names.append(name)
 
+    if not selected_names:
+        return all_tools[:max_tools]
+
     selected = [tool_map[n] for n in selected_names[:max_tools]]
-    return selected if selected else None
+    return selected if selected else all_tools[:max_tools]
