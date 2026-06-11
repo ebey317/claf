@@ -534,9 +534,13 @@ def openai_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     (content_blocks, tool_use_bool)."""
     blocks: list[dict] = []
     # Reasoning models (Cerebras gpt-oss-120b, zai-glm-4.7) put output in
-    # message.reasoning when message.content is null. Fall back to it so these
-    # providers return usable text instead of empty blocks.
-    text = message.get("content") or message.get("reasoning") or ""
+    # message.reasoning when message.content is null. Fall back to it ONLY when
+    # there is no tool call either — raw analysis-channel text surfacing as the
+    # assistant's reply reads like leaked chain-of-thought to the operator
+    # (gaming PC live test 2026-06-11: "The user posted a message that seems…").
+    text = message.get("content") or ""
+    if not text and not message.get("tool_calls"):
+        text = message.get("reasoning") or ""
     if text:
         blocks.append({"type": "text", "text": text})
     tool_calls = message.get("tool_calls") or []
@@ -1544,7 +1548,10 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
     for m in msgs:
         c = m.get("content")
         if isinstance(c, str) and len(c) > max_msg_chars:
-            m = dict(m, content=c[:max_msg_chars] + "\n[…msg trimmed for local ctx…]")
+            # Head AND tail — the hook preamble fills the head; the operator's
+            # actual words are at the end. Same fix as the cloud trim.
+            half = max(max_msg_chars // 2 - 20, 50)
+            m = dict(m, content=c[:half] + "\n[…msg trimmed for local ctx…]\n" + c[-half:])
             trimmed_content = True
         capped_msgs.append(m)
     msgs = capped_msgs
@@ -1887,7 +1894,13 @@ async def messages(request: Request):
                 for _m in _cloud_msgs:
                     c = _m.get("content")
                     if isinstance(c, str) and len(c) > _msg_content_max:
-                        _m = dict(_m, content=c[:_msg_content_max])
+                        # Keep head AND tail. The voice hook prepends standing-orders
+                        # boilerplate, so the operator's actual words sit at the END
+                        # of user messages — head-only truncation deleted them
+                        # (gaming PC live test 2026-06-11: model saw only the
+                        # injected preamble, never the "open tab" command).
+                        _half = max(_msg_content_max // 2 - 12, 50)
+                        _m = dict(_m, content=c[:_half] + " …[trim]… " + c[-_half:])
                         _trimmed_content = True
                     _cloud_msgs_final.append(_m)
                 if _trimmed_content:

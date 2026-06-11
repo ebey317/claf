@@ -315,17 +315,20 @@ def _is_hard_task(body: dict) -> bool:
 
     # Scan last user message for explicit markers + content signals
     if msgs:
-        content = msgs[-1].get("content", "")
-        # Mid-agent-loop: a tool_result coming back means the next turn must be
-        # able to call the next tool. When local is talk-only (MAX_TOOLS=0, e.g.
-        # the gaming PC), routing it local kills the loop one step in. Machines
-        # whose local keeps a tool budget still run loops local-first.
-        # (Re-add of a3c08f3, lost in the 3eaa48a refactor.)
+        # Active agent loop: tool_use/tool_result anywhere in history means this
+        # session is acting, and the next turn must be able to call the next
+        # tool. When local is talk-only (MAX_TOOLS=0, e.g. the gaming PC),
+        # routing ANY turn of an acting session local kills the loop — the
+        # last message alone isn't enough, harness-injected text can follow
+        # the tool_result. (Re-add of a3c08f3, lost in the 3eaa48a refactor.)
         if int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0") or "0") == 0:
-            if isinstance(content, list) and any(
-                isinstance(b, dict) and b.get("type") == "tool_result" for b in content
-            ):
-                return True
+            for msg in msgs:
+                c = msg.get("content", [])
+                if isinstance(c, list) and any(
+                    isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result")
+                    for b in c
+                ):
+                    return True
         text = _last_user_text(msgs)
         if "[CLOUD]" in text or "[ESCALATE]" in text:
             return True

@@ -47,6 +47,13 @@ KNOWN COMMANDS — call the tool immediately, zero questions
 - check inbox → mcp__email-bridge__check_inbox account=gmail
 - madam / start hybrid → bash ~/projects/claf/launch.sh
 
+SELF-DEBUG — when a tool fails or anything looks wrong, READ THE DATA before retrying
+- Bridge access log: ~/scripts/sensei_bridge.log (every HTTP hit + status; 404 on action path = endpoint mismatch)
+- Bridge audit: ~/.sensei_bridge_audit.jsonl (queue_push → queue_pop → action_result flow, timestamped)
+- Router log: ~/projects/claf/orchestrator.log (route_decision, response_out, trims, tool caps)
+- Docs: ~/scripts/ARCHITECTURE.md, ~/scripts/howwework.txt, ~/projects/claf/CLAUDE.md
+- You have Read/Bash/Grep/Glob — use them on these paths directly. Diagnose at the data layer, never guess from the symptom.
+
 WHO / SYSTEM
 Elijah Wilkins | Indianapolis | voice input, no mouse/keyboard | data specialist providing a public service. System: Madam-Mary (Ubuntu), ~/projects/ = project root. Sensei = only browser path. Timezone: America/Indiana/Indianapolis (ET).
 
