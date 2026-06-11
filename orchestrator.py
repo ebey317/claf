@@ -1504,6 +1504,13 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
         return system_text, msgs, info
     max_sys = int(os.environ.get("CLAF_LOCAL_SYS_MAX_CHARS", "1500"))
     max_msgs = int(os.environ.get("CLAF_LOCAL_MAX_MSGS", "10"))
+    # Per-message content cap. The UserPromptSubmit hook injects MEMORY.md +
+    # session snapshot into user messages — on an 8K-ctx local model that single
+    # injection can fill the entire window before the task even starts. Truncate
+    # each message's string content to keep total token budget sane.
+    # Default 1500 chars/msg: 5 msgs × 1500 = 7500 chars ≈ ~1900 tokens, leaving
+    # headroom for system prompt + tool schemas + output.
+    max_msg_chars = int(os.environ.get("CLAF_LOCAL_MSG_CONTENT_MAX", "1500"))
     sys_before = len(system_text or "")
     msgs_before = len(msgs)
 
@@ -1518,10 +1525,22 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
         while msgs and msgs[0].get("role") != "user":
             msgs = msgs[1:]
 
-    if len(system_text or "") != sys_before or len(msgs) != msgs_before:
+    # Truncate per-message string content (catches hook-injected memory blocks).
+    trimmed_content = False
+    capped_msgs = []
+    for m in msgs:
+        c = m.get("content")
+        if isinstance(c, str) and len(c) > max_msg_chars:
+            m = dict(m, content=c[:max_msg_chars] + "\n[…msg trimmed for local ctx…]")
+            trimmed_content = True
+        capped_msgs.append(m)
+    msgs = capped_msgs
+
+    if len(system_text or "") != sys_before or len(msgs) != msgs_before or trimmed_content:
         info = {"trimmed": True, "sys_chars_before": sys_before,
                 "sys_chars_after": len(system_text or ""),
-                "msgs_before": msgs_before, "msgs_after": len(msgs)}
+                "msgs_before": msgs_before, "msgs_after": len(msgs),
+                "msg_content_capped": trimmed_content}
     return system_text, msgs, info
 
 
