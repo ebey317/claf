@@ -1228,6 +1228,34 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
             },
         ))
 
+    # Pass 5: bare "TOOL key=value ..." with NO parens. Cloud-backup peers
+    # (groq, gpt-oss-120b) emit tool calls as plain text when native tool_calls
+    # don't fire, e.g. `mcp__sensei__tab_create url=https://x.com`. Without this
+    # the scraper returns text-only, the giveup interceptor fires, and a whole
+    # redispatch is burned. Real sample found in orchestrator.log 2026-06-11
+    # (giveup_detected_forcing_replan, provider=groq). The _find_tool gate keeps
+    # prose like "x = 5" from false-matching — the first token must resolve to a
+    # real tool. De-dup at the end drops overlap with the paren form (Pass 2).
+    _BARE_KV_LINE = re.compile(
+        r"^[ \t]*([A-Za-z_][A-Za-z0-9_.:-]*)[ \t]+(\S+[ \t]*=.*\S)[ \t]*$", re.M)
+    for _bm in _BARE_KV_LINE.finditer(text):
+        _bname, _bargs = _bm.group(1), _bm.group(2)
+        _btool = _find_tool(available_tools, _bname)
+        if not _btool:
+            continue
+        _bkv = _kv_args(_bargs)
+        if not _bkv:
+            continue
+        found.append((
+            _bm.start(), _bm.end(),
+            {
+                "type": "tool_use",
+                "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                "name": _btool["name"],
+                "input": _bkv,
+            },
+        ))
+
     if not found:
         return [{"type": "text", "text": text}], False
 

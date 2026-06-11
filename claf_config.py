@@ -259,6 +259,16 @@ _ACTION_NEEDLES = re.compile(
     ) + r")"
 )
 
+# Web-search intents must reach CLOUD for accurate, current answers — operator
+# rule 2026-06-11 — UNLESS off-grid (apocalyptic mode), where local is all we
+# have. Scoped to EXPLICIT web phrasing so local DOM "search the page" stays
+# local. _is_hard_task gates this on CLAF_MODE.
+_WEBSEARCH_NEEDLES = re.compile(
+    r"(?i)(search the web|web search|search online|search google|google (?:it|for)|"
+    r"look (?:it )?up online|latest news|current (?:price|news|events)|"
+    r"what'?s the latest|on the (?:web|internet))"
+)
+
 
 def _last_user_text(msgs) -> str:
     """Flatten the last message's text blocks (tool_result blocks yield '')."""
@@ -338,6 +348,11 @@ def _is_hard_task(body: dict) -> bool:
             if _ACTION_NEEDLES.search(_last_user_text(msgs)):
                 return True
         text = _last_user_text(msgs)
+        # Web search → cloud for accuracy/currency, unless off-grid. Operator
+        # rule 2026-06-11. (Apocalyptic mode keeps it local — cloud unreachable.)
+        if (os.environ.get("CLAF_MODE", "hybrid") not in ("off_grid", "local")
+                and _WEBSEARCH_NEEDLES.search(text)):
+            return True
         if "[CLOUD]" in text or "[ESCALATE]" in text:
             return True
         if _HARD_NEEDLES.search(text):
