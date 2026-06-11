@@ -317,20 +317,19 @@ def _is_hard_task(body: dict) -> bool:
 
     # Scan last user message for explicit markers + content signals
     if msgs:
-        # Active agent loop: tool_use/tool_result anywhere in history means this
-        # session is acting, and the next turn must be able to call the next
-        # tool. When local is talk-only (MAX_TOOLS=0, e.g. the gaming PC),
-        # routing ANY turn of an acting session local kills the loop — the
-        # last message alone isn't enough, harness-injected text can follow
-        # the tool_result. (Re-add of a3c08f3, lost in the 3eaa48a refactor.)
-        if int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0") or "0") == 0:
-            for msg in msgs:
-                c = msg.get("content", [])
-                if isinstance(c, list) and any(
-                    isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result")
-                    for b in c
-                ):
-                    return True
+        # MCP/browser tool loop — always escalate regardless of MAX_TOOLS.
+        # If any message in history contains a tool_use call to an mcp__ tool
+        # (sensei, email-bridge, Drive, etc.), this session is a browser agent
+        # loop and all continuation turns must reach a cloud peer with those
+        # tools. Code-tool loops (Bash/Read/Edit) never start with mcp__ names
+        # so they stay local and run fine on the small model.
+        for msg in msgs:
+            c = msg.get("content", [])
+            if isinstance(c, list):
+                for b in c:
+                    if isinstance(b, dict) and b.get("type") == "tool_use":
+                        if b.get("name", "").startswith("mcp__"):
+                            return True
         text = _last_user_text(msgs)
         if "[CLOUD]" in text or "[ESCALATE]" in text:
             return True
@@ -457,15 +456,22 @@ def _select_mode(body: dict):
     #       screenshot/run/...). Routing it local = a model with no hands.
     # Budget safety: flash still goes through throttle.reserve(); when the
     # hourly cap is gone it degrades tap→local exactly like before.
-    local_max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6"))
-    if local_max_tools == 0 and body.get("tools"):
+    if body.get("tools"):
         msgs = body.get("messages") or []
+        # Active MCP/browser session → all continuation turns must reach cloud.
+        # Scan full history for mcp__ tool_use blocks (sensei/email/drive/etc.).
+        # Code tool loops (Bash/Read/Edit) never have mcp__ names → stay local.
+        for msg in msgs:
+            c = msg.get("content", "")
+            if isinstance(c, list):
+                for b in c:
+                    if isinstance(b, dict) and b.get("type") == "tool_use":
+                        if b.get("name", "").startswith("mcp__"):
+                            return "flash", {"reason": "mcp_tool_loop_continuation"}
+        # Action-intent turn (browser command at session start, no history yet)
         last = msgs[-1] if msgs else {}
         content = last.get("content", "")
         if isinstance(content, list):
-            if any(isinstance(b, dict) and b.get("type") == "tool_result"
-                   for b in content):
-                return "flash", {"reason": "tool_loop_continuation"}
             content = " ".join(b.get("text", "") for b in content
                                if isinstance(b, dict))
         if _ACTION_NEEDLES.search(str(content)):
