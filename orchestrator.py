@@ -1532,9 +1532,10 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
 
     if len(msgs) > max_msgs:
         msgs = msgs[-max_msgs:]
-        # Don't start the window mid tool-exchange — a dangling tool_result with
-        # no matching tool_use confuses the model. Drop leading non-user turns.
-        while msgs and msgs[0].get("role") != "user":
+        # Drop leading orphaned assistant turns (no prior user/tool context).
+        # Keep "tool" (converted tool_results) — valid Ollama starting point.
+        # Never drop below 1 message so the model always has something to answer.
+        while len(msgs) > 1 and msgs[0].get("role") == "assistant":
             msgs = msgs[1:]
 
     # Truncate per-message string content (catches hook-injected memory blocks).
