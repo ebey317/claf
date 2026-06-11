@@ -94,7 +94,7 @@ def _cloud_peers() -> list[Provider]:
     return [
         Provider(
             tier=1, name="groq", pool="cloud", kind="openai_compat",
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             url="https://api.groq.com/openai/v1/chat/completions",
             env_key="GROQ_API_KEY",
             enabled=_env_present("GROQ_API_KEY"),
@@ -557,3 +557,80 @@ def describe() -> dict:
             p.name for p in PROVIDERS if p.pool == "cloud" and p.enabled
         ],
     }
+
+
+# ----------------------------------------------------------------------------
+# Toolbox model — local carries only the tool group it needs for the task.
+# 32 full tool schemas ≈ 6400 tokens; one group ≈ 800-1200 tokens.
+# Fits in a 4096 CTX window alongside system + messages + real output.
+# ----------------------------------------------------------------------------
+
+TOOL_GROUPS: dict[str, list[str]] = {
+    "browser": [
+        "mcp__sensei__tab_create", "mcp__sensei__screenshot",
+        "mcp__sensei__read_full", "mcp__sensei__click",
+        "mcp__sensei__fill", "mcp__sensei__browse",
+        "mcp__sensei__scroll", "mcp__sensei__key_press",
+    ],
+    "filesystem": [
+        "Read", "Bash", "Glob", "Grep", "Edit", "Write",
+    ],
+    "tasks": [
+        "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
+    ],
+    "core": [
+        "TaskList", "Read", "Bash",
+    ],
+}
+
+_BROWSER_SIGNALS = {
+    "click", "screenshot", "navigate", "browse", "tab", "page",
+    "url", "open", "website", "browser", "scroll", "fill",
+}
+_FILE_SIGNALS = {
+    "read", "write", "edit", "file", "grep", "glob", "bash", "run",
+    "code", "script", "directory", "path",
+}
+_TASK_SIGNALS = {
+    "task", "todo", "create task", "update task",
+}
+
+
+def select_local_tools(body: dict, all_tools: list[dict]) -> list[dict] | None:
+    """Pick the right tool group for this request.
+
+    Scans the prompt for browser/filesystem/task signals and returns the
+    matching group (+ core tools) capped at CLAF_LOCAL_MAX_TOOLS.
+    Returns None when CLAF_LOCAL_MAX_TOOLS=0 (strip tools mode).
+
+    Token budget: one group ≈ 800-1200 tokens vs 6400+ for all tools.
+    Keeps total local input under ~2800 tokens on a 4096 CTX window."""
+    max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6"))
+    if max_tools == 0:
+        return None
+    if not all_tools:
+        return None
+
+    tool_map = {t.get("name", ""): t for t in all_tools}
+
+    prompt = _flatten_prompt_text(body).lower()
+    scores = {
+        "browser":    sum(1 for s in _BROWSER_SIGNALS if s in prompt),
+        "filesystem": sum(1 for s in _FILE_SIGNALS    if s in prompt),
+        "tasks":      sum(1 for s in _TASK_SIGNALS    if s in prompt),
+    }
+    best_group = max(scores, key=lambda k: scores[k])
+    if scores[best_group] == 0:
+        best_group = "core"
+
+    # Best-group tools first, then core tools to fill remaining slots.
+    selected_names: list[str] = []
+    for name in TOOL_GROUPS.get(best_group, []):
+        if name in tool_map and name not in selected_names:
+            selected_names.append(name)
+    for name in TOOL_GROUPS["core"]:
+        if name in tool_map and name not in selected_names:
+            selected_names.append(name)
+
+    selected = [tool_map[n] for n in selected_names[:max_tools]]
+    return selected if selected else None
