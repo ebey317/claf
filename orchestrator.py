@@ -1290,7 +1290,6 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
                 "input": _jargs,
             },
         ))
-
     if not found:
         return [{"type": "text", "text": text}], False
 
