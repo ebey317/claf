@@ -99,7 +99,7 @@ def _cloud_peers() -> list[Provider]:
             env_key="GROQ_API_KEY",
             enabled=_env_present("GROQ_API_KEY"),
             notes="WORKHORSE — free tier, fast, 14400 req/day (8B). Primary escalation target.",
-            max_tools=6,         # 6 tools keeps body under ~15KB (413 threshold at 8 tools)
+            max_tools=4,         # 4 tools ≈ 14KB body (6 tools = 16.8KB, hits 413)
             max_sys_chars=6500,  # charter (~3.1K) + ~3.4K real context; body stays ~10K << 30K
             max_msgs=6,          # cap history to prevent 413 from large tool_result blocks
             max_msg_content=500, # each message trimmed to 500 chars; tool_results can be huge
@@ -111,6 +111,7 @@ def _cloud_peers() -> list[Provider]:
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
             notes="ultra-fast inference; gpt-oss-120b via Cerebras.",
+            max_tools=4,
             max_sys_chars=6000,
             max_msgs=6,
             max_msg_content=500,
