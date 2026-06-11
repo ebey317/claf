@@ -80,25 +80,6 @@ export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-sk-claf-local-dummy}"
 unset ANTHROPIC_API_KEY
 
 echo "ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"
-
-# Ensure Chrome is running with remote debugging so sensei bridge can create tabs.
-if ! curl -fsS "http://127.0.0.1:9222/json/version" >/dev/null 2>&1; then
-    echo "madam: Chrome CDP not found on 9222 — launching Chrome..."
-    /usr/bin/google-chrome --remote-debugging-port=9222 --no-first-run \
-        --no-default-browser-check --disable-default-apps \
-        2>/tmp/chrome-madam.log &
-    for _i in $(seq 1 20); do
-        sleep 0.5
-        if curl -fsS "http://127.0.0.1:9222/json/version" >/dev/null 2>&1; then
-            echo "  Chrome CDP up"
-            break
-        fi
-    done
-    if ! curl -fsS "http://127.0.0.1:9222/json/version" >/dev/null 2>&1; then
-        echo "  WARNING: Chrome CDP did not start — MCP tab creation may fail"
-    fi
-fi
-
 echo "Launching: claude --chrome"
 echo "(Ctrl+C to exit. Real Anthropic is one fresh terminal away.)"
 echo
