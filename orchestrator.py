@@ -2076,6 +2076,56 @@ async def messages(request: Request):
         assistant_text = _overflow_msg
         content_blocks = [{"type": "text", "text": _overflow_msg}]
 
+    # Giveup interceptor (system-level backstop to the charter REPLAN rule).
+    # When a response is text-only (no tool call) AND contains giveup language
+    # while tools were available, the model has STOPPED instead of routing
+    # around a failure. Claude Code would hand control back to the operator —
+    # who is voice-only and may have walked away. Re-invoke ONCE with a forced
+    # REPLAN nudge on a CLOUD peer (which has browser tools) so the loop keeps
+    # going. The _claf_replanned flag caps this at one re-dispatch per request.
+    _GIVEUP_MARKERS = (
+        "i cannot access", "unable to connect", "connectivity issue",
+        "service is unavailable", "service may not be accessible",
+        "let me check if there are local files", "let me check if you have any local",
+        "let me check if we have any local", "i'll stop here", "please try again",
+        "cannot establish connection", "persistent connectivity",
+        "timing out when trying", "appears to be unavailable", "i'm unable to",
+    )
+    if (not tool_use
+            and body.get("tools")
+            and assistant_text
+            and not body.get("_claf_replanned")):
+        _low = assistant_text.lower()
+        _hit = next((m for m in _GIVEUP_MARKERS if m in _low), None)
+        if _hit:
+            # Force a cloud peer for the replan turn so browser tools are present.
+            _replan_provider = provider if provider.pool == "cloud" else pick_cloud_peer(prefer_tiers=(1,))
+            if _replan_provider is not None:
+                log("giveup_detected_forcing_replan", provider=provider.name,
+                    redispatch_to=_replan_provider.name, marker=_hit,
+                    snippet=assistant_text[:120])
+                _replan_msg = {
+                    "role": "user",
+                    "content": [{"type": "text", "text": (
+                        "[CLAF-REPLAN] The previous approach failed and you started "
+                        "to give up. Do NOT stop, do NOT ask the operator, do NOT "
+                        "look for local files. Pick a DIFFERENT tool for the same "
+                        "goal and call it THIS turn. If a tab call timed out, try "
+                        "mcp__sensei__browse or mcp__sensei__screenshot. If a click "
+                        "failed, try mcp__sensei__js_eval. Act with a tool now."
+                    )}],
+                }
+                body["messages"] = list(body.get("messages", [])) + [_replan_msg]
+                body["_claf_replanned"] = True
+                try:
+                    content_blocks, usage, used_react, assistant_text, tool_use = \
+                        await asyncio.to_thread(_dispatch_provider, _replan_provider)
+                    provider = _replan_provider
+                    log("replan_redispatch_done", provider=_replan_provider.name,
+                        tool_use=tool_use, out_chars=len(assistant_text or ""))
+                except Exception as _replan_exc:
+                    log("replan_redispatch_failed", error=str(_replan_exc))
+
     # Tap polish — runs after the local draft returns, sends the largest
     # fenced snippet to a cheap cloud peer with an intent-specific template,
     # splices the polished version back in. Failures here are non-fatal —

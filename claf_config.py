@@ -98,8 +98,10 @@ def _cloud_peers() -> list[Provider]:
             url="https://api.cerebras.ai/v1/chat/completions",
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
-            notes="PRIMARY flash — ultra-fast, no 413 issues at 4 tools.",
-            max_tools=4,
+            notes="PRIMARY flash — ultra-fast. 14 tools fits the full high-freq "
+                  "set (4 Task + 10 sensei browser) so tab_create/read_full/click "
+                  "always reach the model. 64K ctx, ~31KB body — well under limits.",
+            max_tools=14,
             max_sys_chars=6000,
             max_msgs=6,
             max_msg_content=500,
