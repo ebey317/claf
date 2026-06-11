@@ -5,6 +5,7 @@ lib/
 *.log
 .env
 .env.*
+!profiles/*.env
 .DS_Store
 
 # local-only artifacts

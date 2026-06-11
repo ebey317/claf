@@ -94,11 +94,11 @@ def _cloud_peers() -> list[Provider]:
     return [
         Provider(
             tier=1, name="groq", pool="cloud", kind="openai_compat",
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             url="https://api.groq.com/openai/v1/chat/completions",
             env_key="GROQ_API_KEY",
             enabled=_env_present("GROQ_API_KEY"),
-            notes="WORKHORSE — free tier, fast, reliable. Primary escalation target.",
+            notes="WORKHORSE — free tier, fast, 14400 req/day (8B). Primary escalation target.",
             max_tools=8,         # 8 high-freq sensei tools ~600 chars each in OAI fmt = ~4.8K
             max_sys_chars=6500,  # charter (~3.1K) + ~3.4K real context; body stays ~10K << 30K
             max_msgs=6,          # cap history to prevent 413 from large tool_result blocks
@@ -557,3 +557,74 @@ def describe() -> dict:
             p.name for p in PROVIDERS if p.pool == "cloud" and p.enabled
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Dynamic local tool selection
+# ---------------------------------------------------------------------------
+
+TOOL_GROUPS: dict[str, list[str]] = {
+    "browser": [
+        "mcp__sensei__tab_create", "mcp__sensei__screenshot",
+        "mcp__sensei__read_full", "mcp__sensei__click",
+        "mcp__sensei__fill", "mcp__sensei__browse",
+        "mcp__sensei__scroll", "mcp__sensei__key_press",
+    ],
+    "filesystem": [
+        "Read", "Bash", "Glob", "Grep", "Edit", "Write",
+    ],
+    "tasks": [
+        "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
+    ],
+    "core": [
+        "TaskList", "Read", "Bash",
+    ],
+}
+
+_BROWSER_SIGNALS = {
+    "click", "screenshot", "navigate", "browse", "tab", "page",
+    "url", "open", "website", "browser", "scroll", "fill",
+}
+_FILE_SIGNALS = {
+    "read", "write", "edit", "file", "grep", "glob", "bash", "run",
+    "code", "script", "directory", "path",
+}
+_TASK_SIGNALS = {
+    "task", "todo", "list", "create task", "update task",
+}
+
+
+def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None":
+    """Pick the right tool group for this request.
+
+    Returns a capped subset of all_tools, or None when CLAF_LOCAL_MAX_TOOLS=0.
+    Never sends all 32 tools (6400+ tokens). Sends 4-6 tools from the group
+    that matches the request content (~800-1200 tokens). Core tools
+    (TaskList, Read, Bash) are always appended regardless of group."""
+    import os
+    max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6"))
+    if max_tools == 0:
+        return None
+
+    tool_map = {t.get("name", ""): t for t in (all_tools or [])}
+
+    prompt = _flatten_prompt_text(body).lower()
+    scores = {
+        "browser": sum(1 for s in _BROWSER_SIGNALS if s in prompt),
+        "filesystem": sum(1 for s in _FILE_SIGNALS if s in prompt),
+        "tasks": sum(1 for s in _TASK_SIGNALS if s in prompt),
+    }
+    best_group = max(scores, key=lambda k: scores[k])
+    if scores[best_group] == 0:
+        best_group = "core"
+
+    selected_names: list[str] = []
+    for name in TOOL_GROUPS.get(best_group, []):
+        if name in tool_map and name not in selected_names:
+            selected_names.append(name)
+    for name in TOOL_GROUPS["core"]:
+        if name in tool_map and name not in selected_names:
+            selected_names.append(name)
+
+    selected = [tool_map[n] for n in selected_names[:max_tools]]
+    return selected if selected else None
