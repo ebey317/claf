@@ -88,4 +88,8 @@ echo
 # and only loads servers passed via --mcp-config. With none passed that means
 # ZERO MCP servers (sensei, email-bridge vanish). Plain --chrome loads the
 # normal MCP config so sensei is available in the hybrid session.
+
+# Always launch from $HOME so Claude Code reads ~/CLAUDE.md (operator identity +
+# startup routine) instead of the CLAF project CLAUDE.md (developer notes).
+cd "$HOME"
 exec claude --chrome
