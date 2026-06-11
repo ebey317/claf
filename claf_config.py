@@ -239,10 +239,14 @@ _HARD_TASK_SIGNALS = {
     ],
 }
 
-# Compile into single regex for fast scanning
+# Compile into single regex for fast scanning. The "action" category is
+# EXCLUDED here — action turns are local-first work (local holds browser
+# tools). Action intents only force cloud when local is tool-less
+# (CLAF_LOCAL_MAX_TOOLS=0); that check lives in _is_hard_task/_select_mode.
 _HARD_NEEDLES = re.compile(
     r"(?i)(" + "|".join(
-        re.escape(w) for words in _HARD_TASK_SIGNALS.values() for w in words
+        re.escape(w) for cat, words in _HARD_TASK_SIGNALS.items()
+        if cat != "action" for w in words
     ) + r")"
 )
 
@@ -317,19 +321,22 @@ def _is_hard_task(body: dict) -> bool:
 
     # Scan last user message for explicit markers + content signals
     if msgs:
-        # MCP/browser tool loop — always escalate regardless of MAX_TOOLS.
-        # If any message in history contains a tool_use call to an mcp__ tool
-        # (sensei, email-bridge, Drive, etc.), this session is a browser agent
-        # loop and all continuation turns must reach a cloud peer with those
-        # tools. Code-tool loops (Bash/Read/Edit) never start with mcp__ names
-        # so they stay local and run fine on the small model.
-        for msg in msgs:
-            c = msg.get("content", [])
-            if isinstance(c, list):
-                for b in c:
-                    if isinstance(b, dict) and b.get("type") == "tool_use":
-                        if b.get("name", "").startswith("mcp__"):
-                            return True
+        # LOCAL-FIRST: agent loops (tool_use/tool_result in history) stay
+        # LOCAL — the local model holds tools and continues its own loops.
+        # Only when local is explicitly tool-less (CLAF_LOCAL_MAX_TOOLS=0)
+        # must acting sessions escalate, since a tool-less local would kill
+        # the loop with a chat summary. Cloud is backup, not the default.
+        if int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6") or "6") == 0:
+            for msg in msgs:
+                c = msg.get("content", [])
+                if isinstance(c, list) and any(
+                    isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result")
+                    for b in c
+                ):
+                    return True
+            # Tool-less local also can't handle fresh action commands.
+            if _ACTION_NEEDLES.search(_last_user_text(msgs)):
+                return True
         text = _last_user_text(msgs)
         if "[CLOUD]" in text or "[ESCALATE]" in text:
             return True
@@ -456,22 +463,20 @@ def _select_mode(body: dict):
     #       screenshot/run/...). Routing it local = a model with no hands.
     # Budget safety: flash still goes through throttle.reserve(); when the
     # hourly cap is gone it degrades tap→local exactly like before.
-    if body.get("tools"):
+    # LOCAL-FIRST: agent loops and action turns run LOCAL — the local model
+    # holds tools (CLAF_LOCAL_MAX_TOOLS>0) and drives its own loops. Cloud
+    # only takes tool turns when local is explicitly tool-less (MAX_TOOLS=0),
+    # and even then it's the same off-grid-degrades-gracefully posture: no
+    # cloud peer available → local still answers, just without hands.
+    local_max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6") or "6")
+    if local_max_tools == 0 and body.get("tools"):
         msgs = body.get("messages") or []
-        # Active MCP/browser session → all continuation turns must reach cloud.
-        # Scan full history for mcp__ tool_use blocks (sensei/email/drive/etc.).
-        # Code tool loops (Bash/Read/Edit) never have mcp__ names → stay local.
-        for msg in msgs:
-            c = msg.get("content", "")
-            if isinstance(c, list):
-                for b in c:
-                    if isinstance(b, dict) and b.get("type") == "tool_use":
-                        if b.get("name", "").startswith("mcp__"):
-                            return "flash", {"reason": "mcp_tool_loop_continuation"}
-        # Action-intent turn (browser command at session start, no history yet)
         last = msgs[-1] if msgs else {}
         content = last.get("content", "")
         if isinstance(content, list):
+            if any(isinstance(b, dict) and b.get("type") == "tool_result"
+                   for b in content):
+                return "flash", {"reason": "tool_loop_continuation"}
             content = " ".join(b.get("text", "") for b in content
                                if isinstance(b, dict))
         if _ACTION_NEEDLES.search(str(content)):
@@ -650,10 +655,13 @@ def describe() -> dict:
 
 TOOL_GROUPS: dict[str, list[str]] = {
     "browser": [
-        "mcp__sensei__tab_create", "mcp__sensei__screenshot",
-        "mcp__sensei__read_full", "mcp__sensei__click",
-        "mcp__sensei__fill", "mcp__sensei__browse",
-        "mcp__sensei__scroll", "mcp__sensei__key_press",
+        # Ordered by loop frequency — when MAX_TOOLS caps the list, the
+        # tail gets cut first. search = web search (Google via sensei).
+        "mcp__sensei__tab_create", "mcp__sensei__read_full",
+        "mcp__sensei__click", "mcp__sensei__fill",
+        "mcp__sensei__screenshot", "mcp__sensei__browse",
+        "mcp__sensei__search", "mcp__sensei__scroll",
+        "mcp__sensei__key_press",
     ],
     "filesystem": [
         "Read", "Bash", "Glob", "Grep", "Edit", "Write",
@@ -669,6 +677,8 @@ TOOL_GROUPS: dict[str, list[str]] = {
 _BROWSER_SIGNALS = {
     "click", "screenshot", "navigate", "browse", "tab", "page",
     "url", "open", "website", "browser", "scroll", "fill",
+    # web-search intents → browser group (mcp__sensei__search lives there)
+    "google", "search the web", "web search", "look up",
 }
 _FILE_SIGNALS = {
     "read", "write", "edit", "file", "grep", "glob", "bash", "run",
@@ -704,10 +714,37 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
 
     tool_map = {t.get("name", ""): t for t in all_tools}
 
+    msgs = body.get("messages") or []
+
+    # LOOP CONTINUITY: if this session already called tools, the next turn
+    # needs the SAME tool group — a tool_result turn has no user text to
+    # score, and falling to "core" would strip the browser tools mid-loop
+    # (turn 1 opens a tab, turn 2 has no screenshot tool → loop dies).
+    # Walk history backwards, reuse the group of the most recent tool_use.
+    _NAME_TO_GROUP = {n: g for g, names in TOOL_GROUPS.items()
+                      if g != "core" for n in names}
+    for msg in reversed(msgs):
+        c = msg.get("content", [])
+        if not isinstance(c, list):
+            continue
+        _hist_group = next(
+            (_NAME_TO_GROUP[b["name"]] for b in c
+             if isinstance(b, dict) and b.get("type") == "tool_use"
+             and b.get("name") in _NAME_TO_GROUP),
+            None,
+        )
+        if _hist_group:
+            selected_names: list[str] = []
+            for name in TOOL_GROUPS[_hist_group] + TOOL_GROUPS["core"]:
+                if name in tool_map and name not in selected_names:
+                    selected_names.append(name)
+            if selected_names:
+                return [tool_map[n] for n in selected_names[:max_tools]]
+            break
+
     # Score only the LAST user message — the full prompt includes hook-injected
     # memory (1530 chars full of "read/write/file/code/path") which causes the
     # filesystem group to win on every session-start request regardless of intent.
-    msgs = body.get("messages") or []
     last_user = ""
     for m in reversed(msgs):
         if m.get("role") == "user":
