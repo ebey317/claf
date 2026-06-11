@@ -599,17 +599,25 @@ _TASK_SIGNALS = {
 def select_local_tools(body: dict, all_tools: list[dict]) -> list[dict] | None:
     """Pick the right tool group for this request.
 
-    Scans the prompt for browser/filesystem/task signals and returns the
-    matching group (+ core tools) capped at CLAF_LOCAL_MAX_TOOLS.
-    Returns None when CLAF_LOCAL_MAX_TOOLS=0 (strip tools mode).
+    If the caller already sent a small set (len ≤ max_tools), pass all of
+    them through unchanged. This covers agent_runner's custom tools
+    (bash/read_file/write_file/done) — they should never be stripped, because
+    that's how the local model writes and runs new tools on demand.
 
-    Token budget: one group ≈ 800-1200 tokens vs 6400+ for all tools.
-    Keeps total local input under ~2800 tokens on a 4096 CTX window."""
+    For large sets (Claude Code's 30+ tools), scan the prompt and return the
+    matching group + core tools capped at max_tools (~1000 tokens vs 6400+).
+    Falls back to first max_tools if group lookup finds nothing.
+
+    Returns None when CLAF_LOCAL_MAX_TOOLS=0 (explicit strip-tools mode)."""
     max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6"))
     if max_tools == 0:
         return None
     if not all_tools:
         return None
+
+    # Small sets already within budget — pass through untouched.
+    if len(all_tools) <= max_tools:
+        return all_tools
 
     tool_map = {t.get("name", ""): t for t in all_tools}
 
@@ -632,5 +640,9 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> list[dict] | None:
         if name in tool_map and name not in selected_names:
             selected_names.append(name)
 
+    if not selected_names:
+        # Group lookup found nothing (e.g. unknown naming convention) — take first N.
+        return all_tools[:max_tools]
+
     selected = [tool_map[n] for n in selected_names[:max_tools]]
-    return selected if selected else None
+    return selected if selected else all_tools[:max_tools]
