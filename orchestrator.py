@@ -147,7 +147,7 @@ import sensei_supervisor as supervisor  # ReAct XML tool-call translator (off-gr
 from claf_config import (
     MODE, PROVIDERS, describe, select_provider, _is_hard_task,
     _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
-    next_cloud_peer, pick_cloud_peer,
+    next_cloud_peer, pick_cloud_peer, select_local_tools,
 )
 import claf_throttle as throttle
 import contextlib
@@ -1793,39 +1793,15 @@ async def messages(request: Request):
                 _sys, _msgs, _trim_info = _trim_for_local(_sys, _msgs)
                 if _trim_info.get("trimmed"):
                     log("local_prompt_trimmed", **_trim_info)
-                # Cap the tools array for local. A full Claude Code request ships
-                # dozens of tool schemas (thousands of tokens) that pack the 4096
-                # context window — on a CPU 3B that is ~4 min of prompt eval per
-                # turn, even for "hi". CLAF_LOCAL_MAX_TOOLS bounds how many we send
-                # (0 = strip entirely → fast chat). Raise it when you want the
-                # local model to actually call tools.
-                _max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "0"))
-                if _tools and len(_tools) > _max_tools:
-                    # Use same priority sort as cloud — Task tools first (tiny
-                    # schemas), then sensei tools, then everything else. The
-                    # default slice [:_max_tools] takes the FIRST tools by index
-                    # which are the giant native CC tools (Bash=600+ tokens,
-                    # Read/Edit/Write similar). 8 native tools = ~5000 tokens,
-                    # leaving nothing for output on 8K CTX. Priority sort keeps
-                    # total tool budget under ~1500 tokens for 8 small tools.
-                    if _max_tools > 0:
-                        _LOCAL_PRIO = [
-                            "mcp__sensei__read_full", "mcp__sensei__click",
-                            "mcp__sensei__screenshot", "mcp__sensei__js_eval",
-                            "mcp__sensei__fill", "mcp__sensei__browse",
-                            "mcp__sensei__scroll", "mcp__sensei__tab_create",
-                            "mcp__sensei__key_press", "mcp__sensei__read",
-                            "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
-                        ]
-                        _tmap = {t.get("name"): t for t in _tools}
-                        _prio = [_tmap[n] for n in _LOCAL_PRIO if n in _tmap]
-                        _prio_names = {t.get("name") for t in _prio}
-                        _rest = [t for t in _tools if t.get("name") not in _prio_names]
-                        _tools_eff = (_prio + _rest)[:_max_tools]
-                    else:
-                        _tools_eff = None
-                    log("local_tools_capped", tools_before=len(_tools), tools_after=len(_tools_eff) if _tools_eff else 0,
-                        first_tools=[t.get("name") for t in (_tools_eff or [])][:4])
+                # Select the right tool group for this request. Sending all 32+
+                # tools blows the local 8K CTX (tool schemas alone = 6400+ tokens).
+                # select_local_tools() reads the request and picks 4-6 tools from
+                # the matching group (browser/filesystem/tasks/core) = ~800-1200 tokens.
+                _tools_eff = select_local_tools(body, _tools) if _tools else None
+                log("local_tools_grouped",
+                    tools_before=len(_tools) if _tools else 0,
+                    tools_after=len(_tools_eff) if _tools_eff else 0,
+                    first_tools=[t.get("name") for t in (_tools_eff or [])][:6])
             if _sys:
                 _msgs.insert(0, {"role": "system", "content": _sys})
             _blocks, _usage, _tool_use = ollama_chat(p, _msgs, _tools_eff, max_tokens=body.get("max_tokens"))
@@ -2022,6 +1998,30 @@ async def messages(request: Request):
                         None,
                     )
                     if _local is not None:
+                        # If the request has tools and CLAF_LOCAL_MAX_TOOLS=0,
+                        # local can't do tool calls — return an explicit message
+                        # instead of a silent 1-token failure.
+                        _has_tools = bool(body.get("tools"))
+                        _local_max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6"))
+                        if _has_tools and _local_max_tools == 0:
+                            if trickle_reservation:
+                                throttle.refund(trickle_reservation)
+                                trickle_reservation = None
+                            log("rate_limit_tool_block", failed_peers=sorted(_rate_limit_failed))
+                            _rl_msg = (
+                                "[CLAF: all cloud peers rate-limited — local model has no tools. "
+                                "Wait 30s and retry, or set CLAF_LOCAL_MAX_TOOLS=6 in .env "
+                                "to enable local tool groups.]"
+                            )
+                            _rl_resp = wrap_anthropic_response(
+                                requested_model,
+                                [{"type": "text", "text": _rl_msg}],
+                                {"input_tokens": 0, "output_tokens": len(_rl_msg.split())},
+                                False,
+                            )
+                            if body.get("stream"):
+                                return StreamingResponse(_sse_events(_rl_resp), media_type="text/event-stream")
+                            return _rl_resp
                         provider = _local
                         if trickle_reservation:
                             throttle.refund(trickle_reservation)
