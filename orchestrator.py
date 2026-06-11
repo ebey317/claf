@@ -1798,11 +1798,12 @@ async def messages(request: Request):
                     # total tool budget under ~1500 tokens for 8 small tools.
                     if _max_tools > 0:
                         _LOCAL_PRIO = [
-                            "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
-                            "mcp__sensei__read_full", "mcp__sensei__screenshot",
-                            "mcp__sensei__click", "mcp__sensei__js_eval",
+                            "mcp__sensei__read_full", "mcp__sensei__click",
+                            "mcp__sensei__screenshot", "mcp__sensei__js_eval",
                             "mcp__sensei__fill", "mcp__sensei__browse",
                             "mcp__sensei__scroll", "mcp__sensei__tab_create",
+                            "mcp__sensei__key_press", "mcp__sensei__read",
+                            "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
                         ]
                         _tmap = {t.get("name"): t for t in _tools}
                         _prio = [_tmap[n] for n in _LOCAL_PRIO if n in _tmap]
