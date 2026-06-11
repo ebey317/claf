@@ -145,7 +145,7 @@ if _KEYS_FILE.exists():
 
 import sensei_supervisor as supervisor  # ReAct XML tool-call translator (off-grid MCP)
 from claf_config import (
-    MODE, PROVIDERS, describe, select_provider, _is_hard_task,
+    MODE, PROVIDERS, describe, select_provider, _is_hard_task, _is_action_turn,
     _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
     next_cloud_peer, pick_cloud_peer, select_local_tools,
 )
@@ -2097,6 +2097,11 @@ async def messages(request: Request):
             and not body.get("_claf_replanned")):
         _low = assistant_text.lower()
         _hit = next((m for m in _GIVEUP_MARKERS if m in _low), None)
+        if _hit is None and _is_action_turn(body):
+            # Action-shaped turn answered with words instead of a tool call —
+            # same failure as giveup language, just politer. Retry once on a
+            # tool-bearing peer instead of ending the turn.
+            _hit = "action_turn_text_only"
         if _hit:
             # Force a cloud peer for the replan turn so browser tools are present.
             _replan_provider = provider if provider.pool == "cloud" else pick_cloud_peer(prefer_tiers=(1,))

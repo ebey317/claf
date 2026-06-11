@@ -226,6 +226,15 @@ _HARD_TASK_SIGNALS = {
         "step by step", "walk me through", "how do i build",
         "create a system", "design a", "architecture",
     ],
+    "action": [
+        # Browser/tool intents. The gaming PC local runs CLAF_LOCAL_MAX_TOOLS=0
+        # (talk-only), so any turn that needs hands must reach a cloud peer.
+        "open a tab", "open tab", "open mcp", "mcp tab", "new tab",
+        "open chrome", "screenshot", "take a picture", "click", "browse",
+        "navigate", "scroll", "web search", "search the web", "go to http",
+        "fill out", "fill the form", "apply to", "read the page",
+        ".com", ".net", ".org",
+    ],
 }
 
 # Compile into single regex for fast scanning
@@ -234,6 +243,32 @@ _HARD_NEEDLES = re.compile(
         re.escape(w) for words in _HARD_TASK_SIGNALS.values() for w in words
     ) + r")"
 )
+
+# Action intents compiled separately so the orchestrator's giveup interceptor
+# can ask "was this turn supposed to act?" without re-running full hard-task
+# detection (which also matches analysis/creative turns where text is correct).
+_ACTION_NEEDLES = re.compile(
+    r"(?i)(" + "|".join(
+        re.escape(w) for w in _HARD_TASK_SIGNALS["action"]
+    ) + r")"
+)
+
+
+def _last_user_text(msgs) -> str:
+    """Flatten the last message's text blocks (tool_result blocks yield '')."""
+    if not msgs:
+        return ""
+    content = msgs[-1].get("content", "")
+    if isinstance(content, list):
+        return " ".join(
+            b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+        )
+    return str(content)
+
+
+def _is_action_turn(body: dict) -> bool:
+    """Last user message asks for a browser/tool action (not just words)."""
+    return bool(_ACTION_NEEDLES.search(_last_user_text(body.get("messages") or [])))
 
 
 def _is_hard_task(body: dict) -> bool:
@@ -280,13 +315,15 @@ def _is_hard_task(body: dict) -> bool:
 
     # Scan last user message for explicit markers + content signals
     if msgs:
-        last = msgs[-1]
-        content = last.get("content", "")
-        if isinstance(content, list):
-            content = " ".join(
-                b.get("text", "") if isinstance(b, dict) else str(b) for b in content
-            )
-        text = str(content)
+        content = msgs[-1].get("content", "")
+        if isinstance(content, list) and any(
+            isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+        ):
+            # Mid-agent-loop: a tool_result coming back means the next turn must
+            # be able to call the next tool — never route it to a toolless local,
+            # or the loop dies one step in.
+            return True
+        text = _last_user_text(msgs)
         if "[CLOUD]" in text or "[ESCALATE]" in text:
             return True
         if _HARD_NEEDLES.search(text):
@@ -397,6 +434,35 @@ def _select_mode(body: dict):
         return "flash", {"reason": "emergency_metadata"}
     if _is_hard_task(body):
         return "flash", {"reason": "hard_task_auto_escalate"}
+
+    # TOOL-INTENT routing — the other half of "cloud owns tools, local owns
+    # reasoning". When CLAF_LOCAL_MAX_TOOLS=0 (gaming-PC profile), the local
+    # model receives ZERO tool schemas: it literally cannot click, open a tab,
+    # or run anything — it can only chat ABOUT the task. So any turn that
+    # NEEDS a tool call must go flash:
+    #   (a) mid tool-loop: last message carries a tool_result → the agent is
+    #       executing a multi-step task and the next turn continues it
+    #       (another tool call, or a wrap-up that needs the full context).
+    #       Without this, turn 1 escalates + calls TaskList, then turn 2
+    #       routes local and the loop dies as a chat summary.
+    #   (b) action-intent: the operator's text is a command (open/click/
+    #       screenshot/run/...). Routing it local = a model with no hands.
+    # Budget safety: flash still goes through throttle.reserve(); when the
+    # hourly cap is gone it degrades tap→local exactly like before.
+    local_max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6"))
+    if local_max_tools == 0 and body.get("tools"):
+        msgs = body.get("messages") or []
+        last = msgs[-1] if msgs else {}
+        content = last.get("content", "")
+        if isinstance(content, list):
+            if any(isinstance(b, dict) and b.get("type") == "tool_result"
+                   for b in content):
+                return "flash", {"reason": "tool_loop_continuation"}
+            content = " ".join(b.get("text", "") for b in content
+                               if isinstance(b, dict))
+        if _ACTION_NEEDLES.search(str(content)):
+            return "flash", {"reason": "action_intent_needs_tools"}
+
     return "local", {"reason": "default_local_first"}
 
 
