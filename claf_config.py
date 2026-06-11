@@ -99,7 +99,7 @@ def _cloud_peers() -> list[Provider]:
             env_key="GROQ_API_KEY",
             enabled=_env_present("GROQ_API_KEY"),
             notes="WORKHORSE — free tier, fast, 14400 req/day (8B). Primary escalation target.",
-            max_tools=8,         # 8 high-freq sensei tools ~600 chars each in OAI fmt = ~4.8K
+            max_tools=6,         # 6 tools keeps body under ~15KB (413 threshold at 8 tools)
             max_sys_chars=6500,  # charter (~3.1K) + ~3.4K real context; body stays ~10K << 30K
             max_msgs=6,          # cap history to prevent 413 from large tool_result blocks
             max_msg_content=500, # each message trimmed to 500 chars; tool_results can be huge
@@ -621,7 +621,23 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
 
     tool_map = {t.get("name", ""): t for t in all_tools}
 
-    prompt = _flatten_prompt_text(body).lower()
+    # Score only the LAST user message — the full prompt includes hook-injected
+    # memory (1530 chars full of "read/write/file/code/path") which causes the
+    # filesystem group to win on every session-start request regardless of intent.
+    msgs = body.get("messages") or []
+    last_user = ""
+    for m in reversed(msgs):
+        if m.get("role") == "user":
+            c = m.get("content", "")
+            if isinstance(c, str):
+                last_user = c
+            elif isinstance(c, list):
+                last_user = " ".join(
+                    b.get("text", "") for b in c
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
+            break
+    prompt = last_user.lower()
     scores = {
         "browser":    sum(1 for s in _BROWSER_SIGNALS if s in prompt),
         "filesystem": sum(1 for s in _FILE_SIGNALS    if s in prompt),
