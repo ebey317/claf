@@ -419,8 +419,13 @@ def _pick_cloud_peer() -> Provider:
     return min(cloud, key=lambda p: p.tier)
 
 
-def next_cloud_peer(failed_names: set[str]) -> "Provider | None":
+def next_cloud_peer(failed_names: set[str], max_tier: int = 999) -> "Provider | None":
     """Return the next enabled cloud peer not in `failed_names`, sorted by tier.
+
+    `max_tier` bounds the fallback walk to prevent flash/tap requests from
+    leaking into paid tiers. Flash = max_tier=1, tap = max_tier=3, explicit
+    escalation = 999 (unbounded). Without this, a Groq 429 cascades all the
+    way to Anthropic (tier 4) even for routine flash tasks.
 
     Used by the rate-limit fallback loop in the orchestrator:
 
@@ -439,10 +444,14 @@ def next_cloud_peer(failed_names: set[str]) -> "Provider | None":
                     raise RuntimeError("all cloud peers rate-limited") from e
 
     Returns None when the pool is exhausted (all enabled cloud peers are in
-    `failed_names`). The caller should surface a 429 or fall back to local.
+    `failed_names` or above `max_tier`). The caller should surface a 429 or
+    fall back to local.
     """
     cloud = sorted(
-        [p for p in PROVIDERS if p.pool == "cloud" and p.enabled and p.name not in failed_names],
+        [p for p in PROVIDERS
+         if p.pool == "cloud" and p.enabled
+         and p.name not in failed_names
+         and p.tier <= max_tier],
         key=lambda p: p.tier,
     )
     return cloud[0] if cloud else None
