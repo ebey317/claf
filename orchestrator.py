@@ -1766,7 +1766,7 @@ async def messages(request: Request):
     # would land on Anthropic (paid tier 4), run the operator's Console budget,
     # and return 1 token when the body is malformed for that path.
     _max_fallback_tier: int = (
-        1 if trickle_mode == "flash"
+        2 if trickle_mode == "flash"   # Groq(1) + Cerebras(2) before local
         else 3 if trickle_mode == "tap"
         else 999  # explicit cloud escalation — all tiers allowed
     )
@@ -2054,6 +2054,26 @@ async def messages(request: Request):
                 }
             },
         )
+
+    # Detect local context overflow: 8192-token window fully consumed by input,
+    # model generated 1 token or nothing. Surface an explicit message instead of
+    # silently returning an empty response that makes Claude Code stop with no output.
+    if (provider.pool == "local"
+            and usage.get("output_tokens", 0) <= 1
+            and not assistant_text
+            and not tool_use):
+        _overflow_msg = (
+            f"[CLAF: local model context overflow — "
+            f"input consumed {usage.get('input_tokens', '?')} of 8192 tokens, "
+            "no response generated. Run /clear to reset context, "
+            "or prefix your message with 'escalate:' to force cloud.]"
+        )
+        log("local_ctx_overflow_detected",
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            provider=provider.name)
+        assistant_text = _overflow_msg
+        content_blocks = [{"type": "text", "text": _overflow_msg}]
 
     # Tap polish — runs after the local draft returns, sends the largest
     # fenced snippet to a cheap cloud peer with an intent-specific template,
