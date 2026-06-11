@@ -544,6 +544,34 @@ def openai_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     if text:
         blocks.append({"type": "text", "text": text})
     tool_calls = message.get("tool_calls") or []
+
+    # Recovery: <function=ToolName>{"args"}</function> XML-tag format.
+    # gpt-oss-120b (Cerebras) and some Qwen-based models embed tool calls as
+    # XML tags in the content string instead of the native tool_calls field.
+    if not tool_calls and text:
+        _fn_re = re.compile(
+            r"<function=([A-Za-z_][A-Za-z0-9_.:-]*)>\s*(.*?)\s*</function>",
+            re.DOTALL,
+        )
+        _recovered: list[dict] = []
+        for _m in _fn_re.finditer(text):
+            try:
+                _recovered.append({
+                    "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                    "type": "function",
+                    "function": {
+                        "name": _m.group(1),
+                        "arguments": json.loads(_m.group(2).strip()),
+                    },
+                })
+            except Exception:
+                pass
+        if _recovered:
+            tool_calls = _recovered
+            # Strip function tags from display text
+            text = _fn_re.sub("", text).strip()
+            blocks = [{"type": "text", "text": text}] if text else []
+
     for tc in tool_calls:
         fn = tc.get("function", {}) or {}
         raw_args = fn.get("arguments", "{}")
@@ -1086,6 +1114,33 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
                     },
                 )
             )
+
+    # Pass 4: <function=ToolName>{...}</function> XML-tag format.
+    # gpt-oss-120b (Cerebras) falls back to this when native tool_calls don't
+    # fire — JSON args are embedded between XML function tags in the content.
+    _FN_TAG_RE = re.compile(
+        r"<function=([A-Za-z_][A-Za-z0-9_.:-]*)>\s*(.*?)\s*</function>",
+        re.DOTALL,
+    )
+    for _m in _FN_TAG_RE.finditer(text):
+        _fname = _m.group(1)
+        _fargs_raw = _m.group(2).strip()
+        _tool = _find_tool(available_tools, _fname)
+        if not _tool:
+            continue
+        try:
+            _fargs = json.loads(_fargs_raw) if _fargs_raw else {}
+        except Exception:
+            continue
+        found.append((
+            _m.start(), _m.end(),
+            {
+                "type": "tool_use",
+                "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                "name": _tool["name"],
+                "input": _fargs,
+            },
+        ))
 
     if not found:
         return [{"type": "text", "text": text}], False
