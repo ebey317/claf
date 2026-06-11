@@ -51,6 +51,28 @@ if ! curl -fsS "${PROXY_URL}/" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Ensure sensei bridge is installed and running (auto-repair missing service).
+_BRIDGE_URL="${SENSEI_BRIDGE_URL:-http://localhost:8080}"
+_BRIDGE_SERVICE="sensei-bridge.service"
+_BRIDGE_SERVICE_FILE="$HOME/.config/systemd/user/$_BRIDGE_SERVICE"
+_BRIDGE_SRC="$CLAF_DIR/systemd/$_BRIDGE_SERVICE"
+if [ ! -f "$_BRIDGE_SERVICE_FILE" ] && [ -f "$_BRIDGE_SRC" ]; then
+    echo "madam: sensei-bridge service missing — installing from repo..."
+    cp "$_BRIDGE_SRC" "$_BRIDGE_SERVICE_FILE"
+    systemctl --user daemon-reload
+    systemctl --user enable "$_BRIDGE_SERVICE" 2>/dev/null || true
+fi
+if ! curl -fsS "$_BRIDGE_URL/health" >/dev/null 2>&1; then
+    echo "madam: sensei bridge down — starting $_BRIDGE_SERVICE..."
+    systemctl --user start "$_BRIDGE_SERVICE" 2>/dev/null || true
+    sleep 2
+    if curl -fsS "$_BRIDGE_URL/health" >/dev/null 2>&1; then
+        echo "  sensei bridge up at $_BRIDGE_URL"
+    else
+        echo "  WARNING: sensei bridge did not start — MCP tools may be unavailable"
+    fi
+fi
+
 export ANTHROPIC_BASE_URL="$PROXY_URL"
 export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-sk-claf-local-dummy}"
 # Critical: never let an API key leak into the client when routing through CLAF.

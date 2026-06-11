@@ -1,0 +1,15 @@
+[Unit]
+Description=Sensei Bridge (sensei_bridge.py)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/elijah/scripts/sensei_bridge.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/elijah/scripts/sensei_bridge.log
+StandardError=append:/home/elijah/scripts/sensei_bridge.log
+Environment=HOME=/home/elijah
+
+[Install]
+WantedBy=default.target
