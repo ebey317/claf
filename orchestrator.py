@@ -1569,6 +1569,36 @@ def _do_tap_polish(body: dict, draft_text: str) -> str:
 #                 CLAF_LOCAL_MAX_MSGS (default 10).
 # Set CLAF_LOCAL_TRIM=0 to disable entirely.
 # ---------------------------------------------------------------------------
+def _count_tool_cycles_since_reset(msgs: list) -> int:
+    """Count assistant tool_use turns after the most recent [CLAF-LOOP-RESET] marker.
+    This gives the per-epoch count so the cap resets after each replan injection."""
+    last_reset = -1
+    for i, m in enumerate(msgs):
+        c = m.get("content", "")
+        if isinstance(c, list):
+            c = " ".join(b.get("text", "") for b in c if isinstance(b, dict))
+        if m.get("role") == "user" and "[CLAF-LOOP-RESET" in str(c):
+            last_reset = i
+    count = 0
+    for m in msgs[last_reset + 1:]:
+        if m.get("role") == "assistant":
+            ct = m.get("content", [])
+            if isinstance(ct, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_use" for b in ct
+            ):
+                count += 1
+    return count
+
+
+def _count_replan_epochs(msgs: list) -> int:
+    """Count how many [CLAF-LOOP-RESET] markers exist in the history."""
+    return sum(
+        1 for m in msgs
+        if m.get("role") == "user"
+        and "[CLAF-LOOP-RESET" in str(m.get("content", ""))
+    )
+
+
 def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict], dict]:
     info = {"trimmed": False}
     if os.environ.get("CLAF_LOCAL_TRIM", "1") == "0":
@@ -1657,32 +1687,47 @@ async def messages(request: Request):
     # NEVER-STOP rule keeps the agent looping past task completion.
     _max_loop_turns = int(os.environ.get("CLAF_MAX_LOOP_TURNS", "0") or "0")
     if _max_loop_turns > 0:
-        _tool_cycles = sum(
-            1 for _m in _msgs_probe
-            if _m.get("role") == "assistant"
-            and isinstance(_m.get("content"), list)
-            and any(isinstance(_b, dict) and _b.get("type") == "tool_use"
-                    for _b in _m["content"])
-        )
+        _max_epochs = int(os.environ.get("CLAF_MAX_REPLAN_EPOCHS", "3") or "3")
+        _tool_cycles = _count_tool_cycles_since_reset(_msgs_probe)
+        _epochs = _count_replan_epochs(_msgs_probe)
         if _tool_cycles >= _max_loop_turns:
-            log("loop_turn_cap_hit", turns=_tool_cycles, max=_max_loop_turns)
-            _cap_text = (
-                f"[CLAF: loop cap reached ({_tool_cycles}/{_max_loop_turns} tool turns). "
-                "Summarize completed work and stop.]"
-            )
-            _cap_resp = {
-                "id": f"msg_cap_{_tool_cycles}",
-                "type": "message",
-                "role": "assistant",
-                "model": requested_model,
-                "content": [{"type": "text", "text": _cap_text}],
-                "stop_reason": "end_turn",
-                "stop_sequence": None,
-                "usage": {"input_tokens": 0, "output_tokens": len(_cap_text.split())},
-            }
-            if body.get("stream"):
-                return StreamingResponse(_sse_events(_cap_resp), media_type="text/event-stream")
-            return JSONResponse(_cap_resp)
+            log("loop_turn_cap_hit", turns=_tool_cycles, epoch=_epochs,
+                max_turns=_max_loop_turns, max_epochs=_max_epochs)
+            if _epochs >= _max_epochs:
+                # Exhausted all replan epochs — genuinely need human input.
+                _stop_text = (
+                    f"[CLAF: {_epochs} replan epochs × {_max_loop_turns} turns "
+                    f"({_epochs * _max_loop_turns} total tool turns) — goal not "
+                    "confirmed complete. What specific information or action do you "
+                    "need from the operator to finish? Ask ONE question.]"
+                )
+                _stop_resp = {
+                    "id": f"msg_epoch_stop_{_epochs}",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": requested_model,
+                    "content": [{"type": "text", "text": _stop_text}],
+                    "stop_reason": "end_turn",
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 0, "output_tokens": len(_stop_text.split())},
+                }
+                if body.get("stream"):
+                    return StreamingResponse(_sse_events(_stop_resp), media_type="text/event-stream")
+                return JSONResponse(_stop_resp)
+            else:
+                # Inject a REPLAN marker and fall through to normal dispatch.
+                # Counter resets because _count_tool_cycles_since_reset only
+                # counts turns AFTER the most recent marker.
+                _reset_content = (
+                    f"[CLAF-LOOP-RESET epoch={_epochs + 1}/{_max_epochs}] "
+                    f"{_tool_cycles} tool turns used this epoch. "
+                    "Briefly note what you completed, then immediately continue "
+                    "toward the goal with your next tool call. Do NOT stop."
+                )
+                body["messages"] = list(_msgs_probe) + [
+                    {"role": "user", "content": _reset_content}
+                ]
+                log("loop_replan_injected", epoch=_epochs + 1, turns_this_epoch=_tool_cycles)
 
     # LOCAL mode + hard-task signal = explicit refusal. The operator picked
     # local for a reason; don't silently serve a request that needed cloud.
@@ -1887,6 +1932,11 @@ async def messages(request: Request):
             _sys = system_text
             _tools_eff = _tools
             if p.pool == "local":
+                # Prepend operational charter so local model has COMMAND MODE
+                # rules, forbidden phrases, and self-debug paths. Charter lives
+                # at the HEAD so trim keeps it and drops the CLAUDE.md tail.
+                _charter_local = _load_cloud_charter()
+                _sys = _charter_local + "\n\n" + (_sys or "")
                 _sys, _msgs, _trim_info = _trim_for_local(_sys, _msgs)
                 if _trim_info.get("trimmed"):
                     log("local_prompt_trimmed", **_trim_info)
