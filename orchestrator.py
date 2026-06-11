@@ -625,8 +625,8 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
         "options": opts,
     }
     if provider.model in THINKING_MODELS:
-        if bool(tools) or _request_is_simple({"tools": tools, "messages": messages}):
-            # execution mode or simple chat — thinking off, normal token cap
+        if think_level == "none" or bool(tools) or _request_is_simple({"tools": tools, "messages": messages}):
+            # thinking disabled, execution mode, or simple chat — thinking off
             payload["think"] = False
         else:
             # complex planning — thinking on at configured budget
