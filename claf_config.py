@@ -110,8 +110,10 @@ def _cloud_peers() -> list[Provider]:
             url="https://api.cerebras.ai/v1/chat/completions",
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
-            notes="ultra-fast inference; gpt-oss-120b via Cerebras. Gets FULL memory/history.",
-            full_context=True,
+            notes="ultra-fast inference; gpt-oss-120b via Cerebras.",
+            max_sys_chars=6000,
+            max_msgs=6,
+            max_msg_content=500,
         ),
         Provider(
             tier=3, name="openrouter", pool="cloud", kind="openai_compat",
