@@ -303,6 +303,7 @@ def _load_charter_slices(body: dict) -> str:
     and what signals appear in the last user message.
 
     Always: charter_core
+    + charter_capabilities (tool/capability awareness)
     + charter_browser when sensei tools are in the request
     + charter_tasks when TaskList/Create/Update or task-signal words appear
     + charter_debug when error signals or tool failures are in history
@@ -314,6 +315,12 @@ def _load_charter_slices(body: dict) -> str:
         return _load_cloud_charter()
 
     slices = [core]
+
+    # Capabilities slice: always inject so the model knows what tools it has
+    # (terminal, search, find_doc_link, etc.) and the right workflow for docs/help.
+    cap = _load_charter_slice("charter_capabilities")
+    if cap:
+        slices.append(cap)
 
     # Last user message text for signal scoring
     last_user = ""

@@ -674,9 +674,9 @@ TOOL_GROUPS: dict[str, list[str]] = {
         # tail gets cut first. search = web search (Google via sensei).
         "mcp__sensei__tab_create", "mcp__sensei__read_full",
         "mcp__sensei__click", "mcp__sensei__fill",
-        "mcp__sensei__screenshot", "mcp__sensei__browse",
+        "mcp__sensei__screenshot",
         "mcp__sensei__search", "mcp__sensei__find_doc_link",
-        "mcp__sensei__scroll", "mcp__sensei__key_press",
+        "mcp__sensei__browse", "mcp__sensei__scroll", "mcp__sensei__key_press",
     ],
     "filesystem": [
         "Read", "Bash", "Glob", "Grep", "Edit", "Write",
