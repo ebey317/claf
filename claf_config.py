@@ -731,14 +731,19 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
 
     msgs = body.get("messages") or []
 
-    # LOOP CONTINUITY: if this session already called tools, the next turn
-    # needs the SAME tool group — a tool_result turn has no user text to
-    # score, and falling to "core" would strip the browser tools mid-loop
-    # (turn 1 opens a tab, turn 2 has no screenshot tool → loop dies).
-    # Walk history backwards, reuse the group of the most recent tool_use.
+    # LOOP CONTINUITY: only activates when we're genuinely mid-loop — the last
+    # message must be a tool_result (continuation), not a fresh user question.
+    # Without this guard, any session with prior browser tool_use would force
+    # browser tools on every subsequent request, even "read MD files" tasks.
+    _last_msg = msgs[-1] if msgs else {}
+    _last_content = _last_msg.get("content", [])
+    _is_continuation = isinstance(_last_content, list) and any(
+        isinstance(b, dict) and b.get("type") == "tool_result"
+        for b in _last_content
+    )
     _NAME_TO_GROUP = {n: g for g, names in TOOL_GROUPS.items()
                       if g != "core" for n in names}
-    for msg in reversed(msgs):
+    for msg in (reversed(msgs) if _is_continuation else []):
         c = msg.get("content", [])
         if not isinstance(c, list):
             continue
