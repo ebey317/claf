@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "sensei": {
+      "command": "/home/elijah/projects/claf/.venv/bin/python3",
+      "args": ["/home/elijah/projects/master-ai/sensei_mcp_server.py"],
+      "env": {
+        "CLAF_URL": "http://localhost:8000",
+        "BRIDGE_URL": "http://localhost:8080"
+      }
+    },
+    "secretary": {
+      "command": "/home/elijah/projects/claf/.venv/bin/python3",
+      "args": ["/home/elijah/projects/claf/secretary_agent.py"],
+      "env": {
+        "CLAF_URL": "http://localhost:8000",
+        "BRIDGE_URL": "http://localhost:8080"
+      }
+    },
+    "email-bridge": {
+      "command": "ssh",
+      "args": [
+        "-o",
+        "StrictHostKeyChecking=no",
+        "100.101.249.96",
+        "python3 /home/elijah/scripts/email_mcp/server.py"
+      ]
+    }
+  }
+}
