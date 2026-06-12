@@ -1257,6 +1257,40 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
             },
         ))
 
+    # Pass 6: bare JSON tool-call objects in text, e.g.
+    # {"name": "mcp__sensei__screenshot", "arguments": {...}}
+    # Hermes-class models emit their native ChatML tool-call JSON as plain
+    # content when Ollama's tool binding doesn't fire — found live in the
+    # 2026-06-11 Madam bake-off (hermes3:3b p2: picked the right tool, emitted
+    # it as text, scored CAPABILITY=N). raw_decode from each '{"name"'
+    # candidate gives balanced-brace parsing; works inside <tool_call> wrappers.
+    _decoder = json.JSONDecoder()
+    for _jm in re.finditer(r'\{\s*"name"\s*:', text):
+        _jstart = _jm.start()
+        try:
+            _jobj, _jconsumed = _decoder.raw_decode(text[_jstart:])
+        except Exception:
+            continue
+        if not isinstance(_jobj, dict):
+            continue
+        _jname = _jobj.get("name")
+        _jtool = _find_tool(available_tools, _jname) if isinstance(_jname, str) else None
+        if not _jtool:
+            continue
+        _jargs = next((_jobj[k] for k in ("arguments", "parameters", "input")
+                       if isinstance(_jobj.get(k), dict)), {})
+        # Hermes emits placeholder {"": ""} when it has no args — strip empties.
+        _jargs = {k: v for k, v in _jargs.items() if k}
+        found.append((
+            _jstart, _jstart + _jconsumed,
+            {
+                "type": "tool_use",
+                "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                "name": _jtool["name"],
+                "input": _jargs,
+            },
+        ))
+
     if not found:
         return [{"type": "text", "text": text}], False
 
