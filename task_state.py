@@ -44,13 +44,18 @@ def save_task(task: dict) -> None:
 
 
 def format_task_for_injection(task: dict) -> str:
-    """Compact representation injected at the top of system_text."""
+    """Compact representation injected at the top of system_text.
+
+    Tolerates malformed items (small local models mangle JSON) — a bad item
+    renders as a placeholder instead of 500ing every local turn.
+    """
     lines = ["[ACTIVE TASK]", f"Goal: {task['goal']}"]
-    for item in task.get("items", []):
+    items = [i for i in task.get("items", []) if isinstance(i, dict)]
+    for item in items:
         status = item.get("status", "pending")
         icon = "✅" if status == "done" else ("❌" if status == "failed" else "⬜")
         note = f" — {item['note']}" if item.get("note") else ""
-        lines.append(f"{item['id']}. {icon} {item['task']}{note}")
-    pending = sum(1 for i in task.get("items", []) if i.get("status") == "pending")
+        lines.append(f"{item.get('id', '?')}. {icon} {item.get('task', '<unnamed item>')}{note}")
+    pending = sum(1 for i in items if i.get("status", "pending") == "pending")
     lines.append(f"({pending} item(s) remaining — update this file as you complete each one)")
     return "\n".join(lines)
