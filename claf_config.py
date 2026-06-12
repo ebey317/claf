@@ -694,6 +694,8 @@ _BROWSER_SIGNALS = {
     "url", "open", "website", "browser", "scroll", "fill",
     # web-search intents → browser group (mcp__sensei__search lives there)
     "google", "search the web", "web search", "look up",
+    # documentation / help intents can also need the browser
+    "doc", "docs", "documentation", "manual", "help", "?",
 }
 _FILE_SIGNALS = {
     "read", "write", "edit", "file", "grep", "glob", "bash", "run",
@@ -783,6 +785,25 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
         "filesystem": sum(1 for s in _FILE_SIGNALS    if s in prompt),
         "tasks":      sum(1 for s in _TASK_SIGNALS    if s in prompt),
     }
+
+    # SHORT-FOLLOWUP FALLBACK: queued commands / brief clarifications often
+    # carry no signal words (e.g. "cli doc ?"). If the latest user message is
+    # short and ambiguous, inherit the tool group from the most recent assistant
+    # tool_use so a browser loop doesn't collapse to core tools mid-task.
+    if max(scores.values()) == 0 and len(last_user.strip()) < 50:
+        for m in reversed(msgs):
+            if m.get("role") == "assistant":
+                c = m.get("content", [])
+                if isinstance(c, list):
+                    _hist_group = next(
+                        (_NAME_TO_GROUP[b["name"]] for b in c
+                         if isinstance(b, dict) and b.get("type") == "tool_use"
+                         and b.get("name") in _NAME_TO_GROUP),
+                        None,
+                    )
+                    if _hist_group:
+                        scores = {g: (1 if g == _hist_group else 0) for g in scores}
+                break
 
     # Multi-group selection: if both browser AND filesystem signals present,
     # include both groups. Otherwise pick the highest-scoring group.
