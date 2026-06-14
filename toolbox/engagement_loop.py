@@ -23,10 +23,10 @@ CHECKPOINT_FILE = Path.home() / ".claf" / "engagement_checkpoint.json"
 NOTEPAD = Path.home() / "MD" / "notepad.md"
 CLAF_URL = os.environ.get("CLAF_URL", "http://localhost:8000/v1/messages")
 MAX_TURNS = int(os.environ.get("CLAF_ENGAGEMENT_MAX_TURNS", "20"))
-# Small models (e.g. qwen2.5-coder:3b) lose coherence after ~4 tool calls in one
+# Small models (e.g. qwen2.5-coder:3b) lose coherence after ~5 tool calls in one
 # pass.  The checkpoint is a context reset: stop, record done/remaining, then
 # resume from a fresh window on the next loop run.
-CHECKPOINT_EVERY = int(os.environ.get("CLAF_CHECKPOINT_EVERY", "4"))
+CHECKPOINT_EVERY = int(os.environ.get("CLAF_CHECKPOINT_EVERY", "5"))
 
 # Make claf_permissions importable from the toolbox/ subdirectory.
 _CLAF_DIR = Path(__file__).resolve().parent.parent
