@@ -150,7 +150,7 @@ from task_state import load_task, save_task, format_task_for_injection, task_bel
 from claf_config import (
     MODE, PROVIDERS, describe, select_provider, _is_hard_task, _is_action_turn,
     _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
-    next_cloud_peer, pick_cloud_peer, select_local_tools,
+    next_cloud_peer, pick_cloud_peer, select_local_tools, _EMAIL_SIGNALS,
 )
 import claf_throttle as throttle
 import contextlib
@@ -2934,6 +2934,19 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                         "mcp__sensei__scroll", "mcp__sensei__key_press",
                         "mcp__sensei__read", "mcp__sensei__js_eval",
                     ]
+                    # Email intent boost: when the user asks about email/inbox,
+                    # force the email-bridge tools into the cloud tool cap so the
+                    # model uses them instead of opening browser tabs.
+                    _prompt_text = _flatten_prompt_text(body)
+                    if any(s in _prompt_text for s in _EMAIL_SIGNALS):
+                        _HIGH_FREQ.extend([
+                            "mcp__email-bridge__check_inbox",
+                            "mcp__email-bridge__search_inbox",
+                            "mcp__email-bridge__read_email",
+                            "mcp__email-bridge__list_accounts",
+                            "mcp__email-bridge__list_folders",
+                        ])
+                        log("email_tools_boosted", provider=p.name)
                     _tool_map = {t.get("name"): t for t in _tools}
                     _priority = [_tool_map[n] for n in _HIGH_FREQ if n in _tool_map]
                     _priority_names = {t.get("name") for t in _priority}
