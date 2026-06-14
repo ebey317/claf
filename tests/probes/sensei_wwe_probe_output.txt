@@ -1,0 +1,16 @@
+=== TAB_CREATE https://wwe.com ===
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "tab_create url='https://wwe.com' -> {\"action_id\": \"4df6faa537f9480baf52cd9bf14fb0d4\", \"session_id\": \"mcp-default\", \"verdict\": null, \"result\": {\"ok\": true, \"tab_created\": {\"id\": 12185402, \"url\": \"https://wwe.com\", \"windowId\": 12185372}}, \"final_state\": null, \"completed_ts\": 1781299740.8673913}"
+      }
+    ]
+  }
+}
+
+=== READ_FULL ===
+{"action_id": "c8d6e1f2633d441498d42d5b74079df0", "session_id": "mcp-default", "verdict": null, "result": {"ok": true, "url": "https://www.wwe.com/", "title": "WWE News, Results, Photos & Video - Official Site | WWE", "viewport": {"w": 1412, "h": 911, "scroll_y": 0}, "elements": [{"ref": "ref_1", "role": "banner", "name": "Site header", "value": "", "visible": true, "rect": {"x": 0, "y": 0, "w": 1397, "h": 60}, "selector": "#header"}, {"ref": "ref_2", "role": "nav", "name": "main-navigation", "value": "", "visible": true, "rect": {"x": 0, "y": 0, "w": 1397, "h": 60}, "selector": "#navbar-main"}, {"ref": "ref_3", "role": "navigation", "name": "Main navigation Shows Superstars Tickets Shop Club WWE", "value": "", "visible": true, "rect": {"x": 147, "y": 0, "w": 607, "h": 60}, "selector": "#block-wwe-theme-main-menu"}, {"ref": "ref_4", "role": "a", "name": "Shows", "value": "", "visible": true, "rect": {"x": 147, "y": 0, "w": 60, "h": 60}, "selector": "a"}, {"ref": "ref_5", "role": "a", "name": "Superstars", "value": "", "visible": true, "rect": {"x": 255, "y": 0, "w": 106, "h": 60}, "selector": "a"}, {"ref": "ref_6", "role": "a", "name": "Tickets", "value": "", "visible": true, "rect": {"x": 409, "y": 0, "w": 67, "h": 60}, "selector": "a"}, {"ref": "ref_7", "role": "a", "name": "Shop", "value": "", "visible": true, "rect": {"x": 525, "y": 0, "w": 45, "h": 60}, "selector": "a"}, {"ref": "ref_8", "role": "a", "name": "Sign up for the Club WWE Waitlist", "value": "", "visible": true, "rect": {"x": 617, "y": 0, "w": 89, "h": 60}, "selector": "a"}, {"ref": "ref_9", "role": "button", "name": "", "value": "", "visible": true, "rect": {"x": 954, "y": 1, "w": 15, "h": 15}, "selector": "#cbb"}, {"ref": "ref_10", "role": "a", "name": "Home", "value": "", "visible": true, "rect": {"x": 55, "y": 3, "w": 47, "h": 55}, "selector": "a"}, {"ref": "ref_11", "role": "a", "name": "", "value": "", "visible": true, "rect": {"x": 1310, "y": 18, "w": 24, "h": 24}, "selector": "a"}, {"ref": "

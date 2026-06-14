@@ -11,6 +11,12 @@ ACTIVE TASK FILE — persist progress across loop resets
 - FINISH a task: When all items are done, delete the file with Bash: rm ~/.claf/current_task.json
 Never re-derive task state from scratch — read the file instead.
 
+CONTINUATION RULE (next-step fidelity) — THIS IS WHAT KEEPS AUTOMATION ALIVE
+If the [ACTIVE TASK] block above shows ANY pending item (icon ⬜, status not done/failed/skip), you are MID-TASK. A text-only reply is FORBIDDEN — it ends the loop and abandons the work. Every turn while items remain, you MUST emit your NEXT tool call. The only times prose is allowed: (a) every item is ✅ done or ❌ failed AND you deleted the task file, or (b) you are blocked and need ONE specific answer the operator alone can give — then ask exactly one question. Never narrate "I've completed X, next I'll do Y" and stop: do Y in the same turn by calling the tool.
+
+RICH TASK STRUCTURE — for browser / multi-step / failure-prone work
+For anything beyond a single file edit, add strategy, success_criteria, and fallback_chain fields. The orchestrator injects them every turn. See ~/projects/claf/TASK_STRUCTURE_RUNBOOK.md for the full pattern and an annotated example.
+
 MEMORY — writing to persistent memory
 Memory files live at ~/.claude/projects/-home-elijah/memory/. Use Write or Edit tool to create/update .md files there.
 MEMORY.md at that path is the index — add a one-line pointer for every new memory file.

@@ -54,12 +54,12 @@ claf/
 | `search the web`, `look up`, `current events` | → cloud (accuracy requires live data) |
 | `analyze trade-offs`, `explain why`, system prompt > 10K chars | → cloud |
 | `read`, `write`, `edit`, `file`, `bash` | → local / filesystem group |
-| `click`, `screenshot`, `navigate`, `browse`, `tab` | → local / browser group |
+| `click`, `screenshot`, `browse`, `tab` | → local / browser group |
 | `task`, `todo`, `list` | → local / tasks group |
 | mid-loop `tool_result` continuation | → same group as active loop |
 | fresh user message | → re-score from keywords (no history bleed) |
 
-Tool group selection caps at `CLAF_LOCAL_MAX_TOOLS=10` — local models get the right 4–6 tools for the job, not all 32+.
+Tool group selection caps at `CLAF_LOCAL_MAX_TOOLS=10` — local models get the right 4–6 tools for the job, not the whole surface.
 
 ## Persistent task state
 

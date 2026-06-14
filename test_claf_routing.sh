@@ -34,15 +34,15 @@ T1=$(tail -n +$((BASELINE+1)) "$LOG" | grep -c "picked_tier.*0" || true)
 if [ "$T1" -gt 0 ]; then echo "  PASS: Local handled it"; else echo "  CHECK: May have gone cloud"; fi
 echo ""
 
-# Test 2: Hard code task → should route OLLAMA CLOUD (tier 1)
+# Test 2: Hard code task → should route CLOUD (tier 1)
 echo "TEST 2: Hard code ('debug a race condition in python asyncio')"
-echo "  Expected: ollama-cloud-coder (tier 1)"
+echo "  Expected: any cloud peer (tier 1)"
 curl -s -X POST "$PROXY_URL/v1/messages" \
   -d '{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"debug a race condition in python asyncio"}],"stream":false}' \
   >/dev/null 2>&1
 sleep 3
-T2=$(tail -n +$((BASELINE+1)) "$LOG" | grep -c "ollama-cloud-coder" || true)
-if [ "$T2" -gt 0 ]; then echo "  PASS: Ollama Cloud handled it"; else echo "  CHECK: May have gone elsewhere"; fi
+T2=$(tail -n +$((BASELINE+1)) "$LOG" | grep -c '"picked_tier": 1' || true)
+if [ "$T2" -gt 0 ]; then echo "  PASS: Cloud handled it"; else echo "  CHECK: May have gone elsewhere"; fi
 echo ""
 
 # Test 3: Regex/bash task → should route TAP (Groq tier 2) or stay local
@@ -69,8 +69,9 @@ echo ""
 # Summary
 echo "=== SUMMARY ==="
 echo "Log entries since baseline:"
-tail -n +$((BASELINE+1)) "$LOG" | grep "route_decision" | while read line; do
-    echo "  $(echo "$line" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f"{d['ts']} | tier={d.get('picked_tier','?')} | {d.get('picked_name','?')} | {d.get('picked_model','?')}")" 2>/dev/null || echo "  (raw: $line)")
+tail -n +$((BASELINE+1)) "$LOG" | grep "route_decision" | while read -r line; do
+    parsed=$(echo "$line" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{d.get(\"ts\",\"?\")} | tier={d.get(\"picked_tier\",\"?\")} | {d.get(\"picked_name\",\"?\")} | {d.get(\"picked_model\",\"?\")}')" 2>/dev/null)
+    if [ -n "$parsed" ]; then echo "  $parsed"; else echo "  (raw: $line)"; fi
 done
 echo ""
 echo "Anthropic calls in this test: $T4"

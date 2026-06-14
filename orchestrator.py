@@ -2763,8 +2763,27 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     # flash request cascading through Groq 429 → Cerebras 429 → OpenRouter 402
     # would land on Anthropic (paid tier 4), run the operator's Console budget,
     # and return 1 token when the body is malformed for that path.
+    # Correction / negative feedback should never be handled by Groq, because
+    # Groq is text-only and cannot fix the action. Cap fallback tier at 1
+    # (Cerebras) when the user is correcting or rejecting a previous action.
+    _CORRECTION_SIGNALS = [
+        "not what i asked", "not what i meant", "not what i wanted",
+        "that is not what", "that's not what", "this is not what",
+        "you misunderstood", "you misread", "you missed",
+        "do it again", "try again", "do that again",
+        "that's wrong", "you're wrong", "is wrong", "was wrong",
+        "no, i said", "i didn't ask", "i didn't mean", "i didn't want",
+        "i meant", "i meant to", "i meant the", "actually i meant",
+        "stop doing", "forget that", "back up", "undo that", "start over",
+        "revert", "cancel that", "abort that",
+    ]
+    _prompt_text_lower = _flatten_prompt_text(body).lower()
+    _is_correction = any(s in _prompt_text_lower for s in _CORRECTION_SIGNALS)
+    if _is_correction:
+        log("correction_detected", prompt_snippet=_prompt_text_lower[:120])
     _max_fallback_tier: int = (
-        2 if trickle_mode == "flash"   # Groq(1) + Cerebras(2) before local
+        1 if _is_correction       # skip Groq; use tool-capable Cerebras/OpenRouter
+        else 2 if trickle_mode == "flash"   # Groq(1) + Cerebras(2) before local
         else 3 if trickle_mode == "tap"
         else 999  # explicit cloud escalation — all tiers allowed
     )

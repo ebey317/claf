@@ -98,10 +98,11 @@ def _cloud_peers() -> list[Provider]:
             url="https://api.cerebras.ai/v1/chat/completions",
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
-            notes="PRIMARY flash — ultra-fast. 14 tools fits the full high-freq "
-                  "set (4 Task + 10 sensei browser) so tab_create/read_full/click "
-                  "always reach the model. 64K ctx, ~31KB body — well under limits.",
-            max_tools=14,
+            notes="PRIMARY flash / OVERSEER — ultra-fast. 32 tools carries a "
+                  "representative of EVERY capability (terminal+email+task+browser) "
+                  "so the model can REASON which tool fits instead of being handed "
+                  "browser-only. 64K ctx, ~55KB body at 32 tools — under limits.",
+            max_tools=32,
             max_sys_chars=6000,
             max_msgs=6,
             # 500 beheaded /command skill prompts and hook-prefixed user turns
@@ -236,6 +237,17 @@ _HARD_TASK_SIGNALS = {
         "navigate", "scroll", "web search", "search the web", "go to http",
         "fill out", "fill the form", "apply to", "read the page",
         ".com", ".net", ".org",
+        # Task-management intents: local 3b misses TaskCreate/TaskUpdate schema.
+        # When local returns text-only on these, giveup interceptor replans to cloud.
+        "create task", "add task", "new task", "mark complete", "mark task",
+        "update task", "complete task", "claim task", "finish task",
+        "taskcreate", "taskupdate", "task complete",
+        # Email intents: local returns text instead of calling email-bridge tools.
+        "check email", "check emails", "check my email", "check inbox",
+        "scan email", "read email", "job related email", "email job",
+        "any emails", "check mail", "check all email",
+        # Inventory / tool listing intents
+        "tool inventory", "list tools", "what tools", "tool list",
     ],
 }
 
@@ -283,8 +295,27 @@ def _last_user_text(msgs) -> str:
 
 
 def _is_action_turn(body: dict) -> bool:
-    """Last user message asks for a browser/tool action (not just words)."""
-    return bool(_ACTION_NEEDLES.search(_last_user_text(body.get("messages") or [])))
+    """Any user message in the conversation carries a browser/tool action intent.
+    Checks last AND first user message — original intent gets buried in history
+    as tool_results pile up, so last-only misses the request by turn 3+.
+    """
+    msgs = body.get("messages") or []
+    if not msgs:
+        return False
+    # Last user message (immediate context)
+    if _ACTION_NEEDLES.search(_last_user_text(msgs)):
+        return True
+    # First user message (original intent, often buried by turn 5+)
+    for m in msgs:
+        if m.get("role") == "user":
+            c = m.get("content", "")
+            text = c if isinstance(c, str) else " ".join(
+                b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"
+            )
+            if _ACTION_NEEDLES.search(text.lower()):
+                return True
+            break
+    return False
 
 
 def _is_hard_task(body: dict) -> bool:
@@ -323,10 +354,22 @@ def _is_hard_task(body: dict) -> bool:
         return True
 
     msgs = body.get("messages") or []
+    # Detect mid-tool-loop requests: if the history already contains tool_use
+    # or tool_result blocks, the agent is executing a multi-step local task.
+    # These should stay local even as message count grows, otherwise long
+    # bounded loops (e.g. create 60 files) escalate to cloud and die.
+    _mid_tool_loop = any(
+        isinstance(msg.get("content"), list) and any(
+            isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result")
+            for b in msg["content"]
+        )
+        for msg in msgs
+    )
     # Claude Code conversations routinely hit 25+ messages; the local model
     # already trims to the last 10, so context size isn't the issue. Escalate
-    # only when conversations are genuinely massive (100+ turns).
-    if len(msgs) > 100:
+    # only when conversations are genuinely massive (150+ turns) AND not a
+    # mid-tool-loop that the local model is already driving.
+    if len(msgs) > 150 and not _mid_tool_loop:
         return True
 
     # Scan last user message for explicit markers + content signals
@@ -348,6 +391,27 @@ def _is_hard_task(body: dict) -> bool:
             if _ACTION_NEEDLES.search(_last_user_text(msgs)):
                 return True
         text = _last_user_text(msgs)
+        # Background autocomplete / suggestion-mode turns are noise — never flash.
+        # "No tools needed for suggestion" = error tool_result from suggestion loop.
+        _LOCAL_EXEMPT = (
+            "[suggestion mode]", "no tools needed for suggestion",
+            "suggest what the user might naturally type",
+        )
+        if any(ex in text.lower() for ex in _LOCAL_EXEMPT):
+            return False
+        # Strip hook-injected blocks before needle scan — same issue as tool
+        # selection: STANDING ORDERS / SESSION SNAPSHOT contain hard-needle words
+        # (architecture, algorithm, analyze) that false-trigger flash.
+        import re as _re_ht
+        for _hdr in (
+            r'\[standing orders\][^\[]*', r'\[task_seed_required[^\]]*\][^\[]*',
+            r'\[session snapshot\][^\[]*', r'\[heartbeat[^\]]*\][^\[]*',
+            r'\[non-negotiables\][^\[]*', r'\[topology\][^\[]*',
+            r'\[retry_schema[^\]]*\][^\[]*', r'\[open tasks[^\]]*\][^\[]*',
+            r'<system-reminder>.*?</system-reminder>',
+        ):
+            text = _re_ht.sub(_hdr, ' ', text, flags=_re_ht.DOTALL)
+        text = ' '.join(text.split())
         # Web search → cloud for accuracy/currency, unless off-grid. Operator
         # rule 2026-06-11. (Apocalyptic mode keeps it local — cloud unreachable.)
         if (os.environ.get("CLAF_MODE", "hybrid") not in ("off_grid", "local")
@@ -496,6 +560,30 @@ def _select_mode(body: dict):
                                if isinstance(b, dict))
         if _ACTION_NEEDLES.search(str(content)):
             return "flash", {"reason": "action_intent_needs_tools"}
+
+    # PLANNER-EXECUTOR (overseer) split — the architecture the operator wants:
+    #   cloud = overseer (plans, drives the tool loop, decides when done),
+    #   local = worker (cheap standalone turns: chat, one-shot lookups, coding).
+    # The local 3B is ~100s/turn and stalls on clarifying questions mid-loop,
+    # so it CANNOT be the executor inside a live agentic task. Once a task
+    # needs tools, the overseer runs the WHOLE loop on cloud (fast, coherent):
+    #   - action-intent turn (operator command)       → flash
+    #   - tool_result continuation (mid-loop step)     → flash
+    # Everything else (plain chat, no tools) stays local. Disable: CLAF_OVERSEER=0.
+    if os.environ.get("CLAF_OVERSEER", "1") != "0" and body.get("tools"):
+        _pe_msgs = body.get("messages") or []
+        _pe_last = _pe_msgs[-1] if _pe_msgs else {}
+        _pe_content = _pe_last.get("content", [])
+        _pe_is_tool_result = (
+            _pe_last.get("role") == "user"
+            and isinstance(_pe_content, list)
+            and any(isinstance(_b, dict) and _b.get("type") == "tool_result"
+                    for _b in _pe_content)
+        )
+        if _pe_is_tool_result:
+            return "flash", {"reason": "overseer_loop_continuation"}
+        if _is_action_turn(body):
+            return "flash", {"reason": "overseer_plan_turn"}
 
     return "local", {"reason": "default_local_first"}
 
@@ -674,15 +762,24 @@ TOOL_GROUPS: dict[str, list[str]] = {
         # tail gets cut first. search = web search (Google via sensei).
         "mcp__sensei__tab_create", "mcp__sensei__read_full",
         "mcp__sensei__click", "mcp__sensei__fill",
-        "mcp__sensei__screenshot",
-        "mcp__sensei__search", "mcp__sensei__find_doc_link",
-        "mcp__sensei__browse", "mcp__sensei__scroll", "mcp__sensei__key_press",
+        "mcp__sensei__screenshot", "mcp__sensei__browse",
+        "mcp__sensei__search", "mcp__sensei__scroll",
+        "mcp__sensei__key_press",
     ],
     "filesystem": [
         "Read", "Bash", "Glob", "Grep", "Edit", "Write",
     ],
     "tasks": [
         "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
+    ],
+    "email": [
+        # Email-bridge MCP lives on Mary; include all its tools so local can
+        # scan inboxes/trash and read/search messages without escalating.
+        "mcp__email-bridge__check_inbox",
+        "mcp__email-bridge__read_email",
+        "mcp__email-bridge__search_inbox",
+        "mcp__email-bridge__list_accounts",
+        "mcp__email-bridge__list_folders",
     ],
     "core": [
         "TaskList", "Read", "Bash",
@@ -694,8 +791,6 @@ _BROWSER_SIGNALS = {
     "url", "open", "website", "browser", "scroll", "fill",
     # web-search intents → browser group (mcp__sensei__search lives there)
     "google", "search the web", "web search", "look up",
-    # documentation / help intents can also need the browser
-    "doc", "docs", "documentation", "manual", "help", "?",
 }
 _FILE_SIGNALS = {
     "read", "write", "edit", "file", "grep", "glob", "bash", "run",
@@ -703,6 +798,12 @@ _FILE_SIGNALS = {
 }
 _TASK_SIGNALS = {
     "task", "todo", "list", "create task", "update task",
+}
+_EMAIL_SIGNALS = {
+    "email", "emails", "inbox", "trash", "folder", "folders",
+    "aol", "gmail", "outlook", "mail", "message", "messages",
+    "check mail", "scan mail", "check inbox", "scan inbox",
+    "job related", "indeed", "ziprecruiter", "linkedin",
 }
 
 
@@ -764,67 +865,77 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
                 return [tool_map[n] for n in selected_names[:max_tools]]
             break
 
-    # Score only the LAST user message — the full prompt includes hook-injected
-    # memory (1530 chars full of "read/write/file/code/path") which causes the
-    # filesystem group to win on every session-start request regardless of intent.
+    # Score last AND first user message. Last = immediate context. First =
+    # original intent, which gets buried under tool_results by turn 3+.
+    # Example: "check emails" at turn 1 → by turn 5 last msg is inbox JSON,
+    # signal scoring misses email keywords, drops email tools on continuation.
+    def _extract_user_text(msg):
+        c = msg.get("content", "")
+        if isinstance(c, str):
+            return c
+        if isinstance(c, list):
+            return " ".join(
+                b.get("text", "") for b in c
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+        return ""
+
     last_user = ""
+    first_user = ""
     for m in reversed(msgs):
         if m.get("role") == "user":
-            c = m.get("content", "")
-            if isinstance(c, str):
-                last_user = c
-            elif isinstance(c, list):
-                last_user = " ".join(
-                    b.get("text", "") for b in c
-                    if isinstance(b, dict) and b.get("type") == "text"
-                )
-            break
-    prompt = last_user.lower()
+            if not last_user:
+                last_user = _extract_user_text(m)
+            first_user = _extract_user_text(m)  # keeps updating to earliest
+    prompt = (last_user + " " + first_user).lower()
+
+    # Strip hook-injected context blocks before scoring. The UserPromptSubmit
+    # hook prepends [STANDING ORDERS], [TASK_SEED_REQUIRED], [SESSION SNAPSHOT],
+    # etc. — each containing browser/file keywords that corrupt group selection.
+    # Example: hook contains "tab_create", "screenshot", "scroll" → browser
+    # signals fire on every email or file request, producing multi-group and
+    # giving the local model browser tools it then misuses.
+    import re as _re
+    for _hdr in (
+        r'\[standing orders\][^\[]*',
+        r'\[task_seed_required[^\]]*\][^\[]*',
+        r'\[session snapshot\][^\[]*',
+        r'\[heartbeat[^\]]*\][^\[]*',
+        r'\[non-negotiables\][^\[]*',
+        r'\[topology\][^\[]*',
+        r'\[retry_schema[^\]]*\][^\[]*',
+        r'\[open tasks[^\]]*\][^\[]*',
+    ):
+        prompt = _re.sub(_hdr, ' ', prompt, flags=_re.DOTALL)
+    prompt = ' '.join(prompt.split())  # collapse whitespace
+
     scores = {
         "browser":    sum(1 for s in _BROWSER_SIGNALS if s in prompt),
         "filesystem": sum(1 for s in _FILE_SIGNALS    if s in prompt),
         "tasks":      sum(1 for s in _TASK_SIGNALS    if s in prompt),
+        "email":      sum(1 for s in _EMAIL_SIGNALS  if s in prompt),
     }
 
-    # SHORT-FOLLOWUP FALLBACK: queued commands / brief clarifications often
-    # carry no signal words (e.g. "cli doc ?"). If the latest user message is
-    # short and ambiguous, inherit the tool group from the most recent assistant
-    # tool_use so a browser loop doesn't collapse to core tools mid-task.
-    if max(scores.values()) == 0 and len(last_user.strip()) < 50:
-        for m in reversed(msgs):
-            if m.get("role") == "assistant":
-                c = m.get("content", [])
-                if isinstance(c, list):
-                    _hist_group = next(
-                        (_NAME_TO_GROUP[b["name"]] for b in c
-                         if isinstance(b, dict) and b.get("type") == "tool_use"
-                         and b.get("name") in _NAME_TO_GROUP),
-                        None,
-                    )
-                    if _hist_group:
-                        scores = {g: (1 if g == _hist_group else 0) for g in scores}
-                break
-
-    # Multi-group selection: if both browser AND filesystem signals present,
-    # include both groups. Otherwise pick the highest-scoring group.
-    # This allows "create a file and visit a website" to work in one loop.
+    # Multi-group selection: if multiple signal groups are present, include them
+    # all (e.g. email + filesystem, browser + filesystem). Otherwise pick the
+    # highest-scoring group. Core tools are always appended last so they don't
+    # steal budget from specialized groups.
     selected_names: list[str] = []
-    if scores["browser"] > 0 and scores["filesystem"] > 0:
-        # Both signals present: combine browser + filesystem + core
-        for name in TOOL_GROUPS["browser"] + TOOL_GROUPS["filesystem"] + TOOL_GROUPS["core"]:
-            if name in tool_map and name not in selected_names:
-                selected_names.append(name)
+    active_groups = [g for g in scores if scores[g] > 0]
+    if len(active_groups) > 1:
+        for group in active_groups:
+            for name in TOOL_GROUPS.get(group, []):
+                if name in tool_map and name not in selected_names:
+                    selected_names.append(name)
     else:
-        # Single dominant group: use winner-takes-all
-        best_group = max(scores, key=lambda k: scores[k])
-        if scores[best_group] == 0:
-            best_group = "core"
+        # Single dominant group (or no signals -> core)
+        best_group = active_groups[0] if active_groups else "core"
         for name in TOOL_GROUPS.get(best_group, []):
             if name in tool_map and name not in selected_names:
                 selected_names.append(name)
-        for name in TOOL_GROUPS["core"]:
-            if name in tool_map and name not in selected_names:
-                selected_names.append(name)
+    for name in TOOL_GROUPS["core"]:
+        if name in tool_map and name not in selected_names:
+            selected_names.append(name)
 
     if not selected_names:
         return all_tools[:max_tools]

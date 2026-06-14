@@ -16,6 +16,7 @@ explicitly forces cloud. Three per day by default.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 import uuid
@@ -33,10 +34,10 @@ class ThrottleState:
     # high hourly/daily caps don't cost money; they just prevent CLAF from
     # self-throttling the free tier into local-only. Paid tiers are explicit
     # escalation only, so a high cap here doesn't increase spend.
-    flash_budget_hourly: int = 200    # was 5 — free cloud tier, no billing
-    tap_budget_hourly: int = 200      # was 15
-    token_budget_daily: int = 500_000 # was 25_000 — count informational only
-    emergency_flash_daily: int = 10   # was 3
+    flash_budget_hourly: int = int(os.environ.get("CLAF_FLASH_BUDGET_HOURLY", "200"))    # was 5 — free cloud tier, no billing
+    tap_budget_hourly: int = int(os.environ.get("CLAF_TAP_BUDGET_HOURLY", "200"))      # was 15
+    token_budget_daily: int = int(os.environ.get("CLAF_TOKEN_BUDGET_DAILY", "500000")) # was 25_000 — count informational only
+    emergency_flash_daily: int = int(os.environ.get("CLAF_EMERGENCY_FLASH_DAILY", "10"))   # was 3
 
     _flash_used: int = 0
     _tap_used: int = 0

@@ -1,0 +1,527 @@
+{
+  "turns": [
+    {
+      "ts": "2026-06-12T15:44:12",
+      "ts_ms": 1781293452148,
+      "turn_id": "e8deb6893976",
+      "conv_fp": "602266ad56",
+      "message_count": 1,
+      "total_ms": 36434,
+      "route_ms": 2,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 36434.0,
+          "min": 36434,
+          "p50": 36434,
+          "p95": 36434,
+          "max": 36434
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "local-ollama",
+      "model": "qwen3.5:9b",
+      "pool": "local",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:43:35",
+        "ts_ms": 1781293415714,
+        "event": "request_in",
+        "turn_id": "e8deb6893976",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:44:12",
+        "ts_ms": 1781293452148,
+        "event": "response_out",
+        "turn_id": "e8deb6893976",
+        "tier": 0,
+        "name": "local-ollama",
+        "out_chars": 60,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 2841,
+        "output_tokens": 15,
+        "trickle_mode": "local"
+      }
+    },
+    {
+      "ts": "2026-06-12T15:48:50",
+      "ts_ms": 1781293730478,
+      "turn_id": "3658437ec955",
+      "conv_fp": "602266ad56",
+      "message_count": 1,
+      "total_ms": 2296,
+      "route_ms": 0,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 2296.0,
+          "min": 2296,
+          "p50": 2296,
+          "p95": 2296,
+          "max": 2296
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "local-ollama",
+      "model": "qwen3.5:9b",
+      "pool": "local",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:48:48",
+        "ts_ms": 1781293728181,
+        "event": "request_in",
+        "turn_id": "3658437ec955",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:48:50",
+        "ts_ms": 1781293730478,
+        "event": "response_out",
+        "turn_id": "3658437ec955",
+        "tier": 0,
+        "name": "local-ollama",
+        "out_chars": 55,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 2841,
+        "output_tokens": 14,
+        "trickle_mode": "local"
+      }
+    },
+    {
+      "ts": "2026-06-12T15:48:53",
+      "ts_ms": 1781293733579,
+      "turn_id": "dac0338257f0",
+      "conv_fp": "fee9133b0b",
+      "message_count": 1,
+      "total_ms": 1092,
+      "route_ms": 0,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 1090.0,
+          "min": 1090,
+          "p50": 1090,
+          "p95": 1090,
+          "max": 1090
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "cerebras",
+      "model": "gpt-oss-120b",
+      "pool": "cloud",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:48:52",
+        "ts_ms": 1781293732486,
+        "event": "request_in",
+        "turn_id": "dac0338257f0",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:48:53",
+        "ts_ms": 1781293733579,
+        "event": "response_out",
+        "turn_id": "dac0338257f0",
+        "tier": 1,
+        "name": "cerebras",
+        "out_chars": 4140,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 1617,
+        "output_tokens": 1549,
+        "trickle_mode": "flash"
+      }
+    },
+    {
+      "ts": "2026-06-12T15:49:06",
+      "ts_ms": 1781293746168,
+      "turn_id": "7b870505c2ae",
+      "conv_fp": "ddea985cfd",
+      "message_count": 1,
+      "total_ms": 9581,
+      "route_ms": 0,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 9581.0,
+          "min": 9581,
+          "p50": 9581,
+          "p95": 9581,
+          "max": 9581
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "local-ollama",
+      "model": "qwen3.5:9b",
+      "pool": "local",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:48:56",
+        "ts_ms": 1781293736587,
+        "event": "request_in",
+        "turn_id": "7b870505c2ae",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:49:06",
+        "ts_ms": 1781293746168,
+        "event": "response_out",
+        "turn_id": "7b870505c2ae",
+        "tier": 0,
+        "name": "local-ollama",
+        "out_chars": 101,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 2856,
+        "output_tokens": 45,
+        "trickle_mode": "local"
+      }
+    },
+    {
+      "ts": "2026-06-12T15:49:09",
+      "ts_ms": 1781293749241,
+      "turn_id": "e4978135de0e",
+      "conv_fp": "65158d9dc0",
+      "message_count": 1,
+      "total_ms": 1061,
+      "route_ms": 0,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 1061.0,
+          "min": 1061,
+          "p50": 1061,
+          "p95": 1061,
+          "max": 1061
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "cerebras",
+      "model": "gpt-oss-120b",
+      "pool": "cloud",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:49:08",
+        "ts_ms": 1781293748179,
+        "event": "request_in",
+        "turn_id": "e4978135de0e",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:49:09",
+        "ts_ms": 1781293749241,
+        "event": "response_out",
+        "turn_id": "e4978135de0e",
+        "tier": 1,
+        "name": "cerebras",
+        "out_chars": 3855,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 1617,
+        "output_tokens": 1145,
+        "trickle_mode": "flash"
+      }
+    },
+    {
+      "ts": "2026-06-12T15:51:09",
+      "ts_ms": 1781293869718,
+      "turn_id": "eb282f2b82e5",
+      "conv_fp": "602266ad56",
+      "message_count": 1,
+      "total_ms": 7342,
+      "route_ms": 0,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 7342.0,
+          "min": 7342,
+          "p50": 7342,
+          "p95": 7342,
+          "max": 7342
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "local-ollama",
+      "model": "qwen3.5:9b",
+      "pool": "local",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:51:02",
+        "ts_ms": 1781293862375,
+        "event": "request_in",
+        "turn_id": "eb282f2b82e5",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:51:09",
+        "ts_ms": 1781293869718,
+        "event": "response_out",
+        "turn_id": "eb282f2b82e5",
+        "tier": 0,
+        "name": "local-ollama",
+        "out_chars": 48,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 684,
+        "output_tokens": 15,
+        "trickle_mode": "local"
+      }
+    },
+    {
+      "ts": "2026-06-12T15:51:12",
+      "ts_ms": 1781293872525,
+      "turn_id": "fb74885ea9f9",
+      "conv_fp": "fee9133b0b",
+      "message_count": 1,
+      "total_ms": 793,
+      "route_ms": 0,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 793.0,
+          "min": 793,
+          "p50": 793,
+          "p95": 793,
+          "max": 793
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "cerebras",
+      "model": "gpt-oss-120b",
+      "pool": "cloud",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:51:11",
+        "ts_ms": 1781293871732,
+        "event": "request_in",
+        "turn_id": "fb74885ea9f9",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:51:12",
+        "ts_ms": 1781293872525,
+        "event": "response_out",
+        "turn_id": "fb74885ea9f9",
+        "tier": 1,
+        "name": "cerebras",
+        "out_chars": 926,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 1617,
+        "output_tokens": 524,
+        "trickle_mode": "flash"
+      }
+    },
+    {
+      "ts": "2026-06-12T15:51:21",
+      "ts_ms": 1781293881271,
+      "turn_id": "a223397f8a2b",
+      "conv_fp": "ddea985cfd",
+      "message_count": 1,
+      "total_ms": 5731,
+      "route_ms": 0,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 5731.0,
+          "min": 5731,
+          "p50": 5731,
+          "p95": 5731,
+          "max": 5731
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "local-ollama",
+      "model": "qwen3.5:9b",
+      "pool": "local",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:51:15",
+        "ts_ms": 1781293875540,
+        "event": "request_in",
+        "turn_id": "a223397f8a2b",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:51:21",
+        "ts_ms": 1781293881271,
+        "event": "response_out",
+        "turn_id": "a223397f8a2b",
+        "tier": 0,
+        "name": "local-ollama",
+        "out_chars": 24,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 699,
+        "output_tokens": 10,
+        "trickle_mode": "local"
+      }
+    },
+    {
+      "ts": "2026-06-12T15:51:24",
+      "ts_ms": 1781293884257,
+      "turn_id": "b1b49f5eb7f8",
+      "conv_fp": "65158d9dc0",
+      "message_count": 1,
+      "total_ms": 978,
+      "route_ms": 0,
+      "dispatch_summary": {
+        "primary": {
+          "n": 1,
+          "mean": 977.0,
+          "min": 977,
+          "p50": 977,
+          "p95": 977,
+          "max": 977
+        }
+      },
+      "redispatch_count": 0,
+      "provider": "cerebras",
+      "model": "gpt-oss-120b",
+      "pool": "cloud",
+      "tool_use": false,
+      "stream": false,
+      "status": "ok",
+      "request_in": {
+        "ts": "2026-06-12T15:51:23",
+        "ts_ms": 1781293883279,
+        "event": "request_in",
+        "turn_id": "b1b49f5eb7f8",
+        "model": "claude-sonnet-4-6",
+        "message_count": 1,
+        "has_system": false,
+        "stream": false,
+        "sys_chars": 0,
+        "sys_has_claude_md": false,
+        "sys_has_memory": false,
+        "prompt_has_retry_hook": false
+      },
+      "response_out": {
+        "ts": "2026-06-12T15:51:24",
+        "ts_ms": 1781293884257,
+        "event": "response_out",
+        "turn_id": "b1b49f5eb7f8",
+        "tier": 1,
+        "name": "cerebras",
+        "out_chars": 3256,
+        "tool_use": false,
+        "tool_use_count": 0,
+        "input_tokens": 1617,
+        "output_tokens": 1170,
+        "trickle_mode": "flash"
+      }
+    }
+  ],
+  "gaps": {
+    "602266ad56": [
+      241896,
+      136944
+    ],
+    "fee9133b0b": [
+      137854
+    ],
+    "ddea985cfd": [
+      125522
+    ],
+    "65158d9dc0": [
+      133955
+    ]
+  },
+  "footer": {
+    "intra_turn_ms": {
+      "n": 9,
+      "mean": 7256.4,
+      "min": 793,
+      "p50": 2296,
+      "p95": 36434,
+      "max": 36434
+    },
+    "inter_turn_gap_ms": {
+      "n": 5,
+      "mean": 155234.2,
+      "min": 125522,
+      "p50": 136944,
+      "p95": 241896,
+      "max": 241896
+    },
+    "redispatch_histogram": {
+      "0": 9
+    },
+    "pct_turns_with_redispatch": 0.0
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "url": "http://localhost:8765/test_form.html",
+  "title": "Test Form",
+  "viewport": {
+    "w": 1412,
+    "h": 911,
+    "scroll_y": 0
+  },
+  "elements_captured": 12,
+  "elements": [
+    {
+      "ref": "ref_1",
+      "role": "div",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": -32,
+        "y": -32,
+        "w": 24,
+        "h": 24
+      },
+      "selector": "#__sensei_mirror_ghost__"
+    },
+    {
+      "ref": "ref_2",
+      "role": "div",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1412,
+        "h": 911
+      },
+      "selector": "#__sensei_mirror_frame__"
+    },
+    {
+      "ref": "ref_3",
+      "role": "div",
+      "name": "\u25b6 BROWSER_READ_PAGE_FULL",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1223,
+        "y": 8,
+        "w": 181,
+        "h": 29
+      },
+      "selector": "#__sensei_mirror_step__"
+    },
+    {
+      "ref": "ref_4",
+      "role": "h2",
+      "name": "Job Application Test",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 8,
+        "y": 20,
+        "w": 1396,
+        "h": 27
+      },
+      "selector": "h2"
+    },
+    {
+      "ref": "ref_5",
+      "role": "form",
+      "name": "First Name: Last Name: Email: Submit",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 8,
+        "y": 67,
+        "w": 1396,
+        "h": 138
+      },
+      "selector": "#appform"
+    },
+    {
+      "ref": "ref_6",
+      "role": "input",
+      "name": "First Name: firstName",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 88,
+        "y": 67,
+        "w": 185,
+        "h": 21
+      },
+      "selector": "#firstName"
+    },
+    {
+      "ref": "ref_7",
+      "role": "label",
+      "name": "First Name:",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 8,
+        "y": 68,
+        "w": 265,
+        "h": 17
+      },
+      "selector": "label"
+    },
+    {
+      "ref": "ref_8",
+      "role": "input",
+      "name": "Last Name: lastName",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 86,
+        "y": 106,
+        "w": 185,
+        "h": 21
+      },
+      "selector": "#lastName"
+    },
+    {
+      "ref": "ref_9",
+      "role": "label",
+      "name": "Last Name:",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 8,
+        "y": 107,
+        "w": 263,
+        "h": 17
+      },
+      "selector": "label"
+    },
+    {
+      "ref": "ref_10",
+      "role": "input",
+      "name": "Email: email",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 55,
+        "y": 145,
+        "w": 185,
+        "h": 21
+      },
+      "selector": "#email"
+    },
+    {
+      "ref": "ref_11",
+      "role": "label",
+      "name": "Email:",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 8,
+        "y": 146,
+        "w": 232,
+        "h": 17
+      },
+      "selector": "label"
+    },
+    {
+      "ref": "ref_12",
+      "role": "button",
+      "name": "Submit",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 8,
+        "y": 184,
+        "w": 57,
+        "h": 21
+      },
+      "selector": "button"
+    }
+  ]
+}

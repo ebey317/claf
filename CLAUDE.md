@@ -1,5 +1,17 @@
 # CLAF — Notes for future Claude Code sessions in this repo
 
+## ⚠️ Machine names — use these, nothing else
+
+| Name | Hostname | IP | Local model |
+|------|----------|----|-------------|
+| **Mary** | Madam-Mary | localhost | hermes3:3b + qwen3-vl:2b |
+| **Elijah** | elijah-ms-7b86 | 100.121.76.101 (Tailscale/SSH) | qwen3.5:9b + qwen3-vl:8b + hermes3:3b |
+
+Never say "gaming PC", "Madam-Mary", "the box", or raw IPs. Always **Mary** or **Elijah**.
+Full handoff dock + open work: `~/MD/HANDOFF.md`
+
+---
+
 ## What this is
 
 A local proxy that wears Anthropic's skin: Claude Code CLI + Chrome MCP extension stay as Anthropic ships them; the LLM call gets redirected to a local Ollama. Off-grid is the architecture, not a toggle.

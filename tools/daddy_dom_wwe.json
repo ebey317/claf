@@ -1,0 +1,3554 @@
+{
+  "url": "https://www.wwe.com/",
+  "title": "WWE News, Results, Photos & Video - Official Site | WWE",
+  "viewport": {
+    "w": 1412,
+    "h": 911,
+    "scroll_y": 0
+  },
+  "elements_captured": 253,
+  "elements": [
+    {
+      "ref": "ref_1",
+      "role": "banner",
+      "name": "Site header",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1397,
+        "h": 60
+      },
+      "selector": "#header"
+    },
+    {
+      "ref": "ref_2",
+      "role": "nav",
+      "name": "main-navigation",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1397,
+        "h": 60
+      },
+      "selector": "#navbar-main"
+    },
+    {
+      "ref": "ref_3",
+      "role": "navigation",
+      "name": "Main navigation Shows Superstars Tickets Shop Club WWE",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 147,
+        "y": 0,
+        "w": 607,
+        "h": 60
+      },
+      "selector": "#block-wwe-theme-main-menu"
+    },
+    {
+      "ref": "ref_4",
+      "role": "a",
+      "name": "Shows",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 147,
+        "y": 0,
+        "w": 60,
+        "h": 60
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_5",
+      "role": "a",
+      "name": "Superstars",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 255,
+        "y": 0,
+        "w": 106,
+        "h": 60
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_6",
+      "role": "a",
+      "name": "Tickets",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 409,
+        "y": 0,
+        "w": 67,
+        "h": 60
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_7",
+      "role": "a",
+      "name": "Shop",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 525,
+        "y": 0,
+        "w": 45,
+        "h": 60
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_8",
+      "role": "a",
+      "name": "Sign up for the Club WWE Waitlist",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 617,
+        "y": 0,
+        "w": 89,
+        "h": 60
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_9",
+      "role": "button",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 954,
+        "y": 1,
+        "w": 15,
+        "h": 15
+      },
+      "selector": "#cbb"
+    },
+    {
+      "ref": "ref_10",
+      "role": "a",
+      "name": "Home",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 55,
+        "y": 3,
+        "w": 47,
+        "h": 55
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_11",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1310,
+        "y": 18,
+        "w": 24,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_12",
+      "role": "a",
+      "name": "main-content",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": -1,
+        "y": 59,
+        "w": 1,
+        "h": 1
+      },
+      "selector": "a[aria-label=\"main-content\"]"
+    },
+    {
+      "ref": "ref_13",
+      "role": "main",
+      "name": "Homepage WWE NXT highlights: June 9, 2026 01:26Naraku signals war with NXT Champion Tony D\u2019Angelo: NXT highlights, June...",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": -12,
+        "y": 60,
+        "w": 1421,
+        "h": 10431
+      },
+      "selector": "#content"
+    },
+    {
+      "ref": "ref_14",
+      "role": "a",
+      "name": "FULL MATCH: Tatum Paxley vs. Zaria | NXT Women\u2019s North American Title Match: NXT, June 9, 2026 FULL MATCH: Tatum Paxley vs. Zaria | NXT Women\u2019s North American Title Match: NXT, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 278,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "a[aria-label=\"FULL\\ MATCH\\:\\ Tatum\\ Paxley\\ vs\\.\\ Zaria\\ \\|\\ NXT\\ Women\u2019s\\ North\\ American\\ Title\\ Match\\:\\ NXT\\,\\ June\\ 9\\,\\ 2026\"]"
+    },
+    {
+      "ref": "ref_15",
+      "role": "img",
+      "name": "WWE Photo. 11 minutes 31 seconds. Opens a video FULL MATCH: Tatum Paxley vs. Zaria | NXT Women\u2019s North American Title Match: NXT, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 278,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "img[aria-label=\"WWE\\ Photo\\.\\ 11\\ minutes\\ 31\\ seconds\\.\\ Opens\\ a\\ video\"]"
+    },
+    {
+      "ref": "ref_16",
+      "role": "a",
+      "name": "Naraku vs. Mason Rook | NXT Title No. 1 Contender\u2019s Match: NXT highlights, June 9, 2026 Naraku vs. Mason Rook | NXT Title No. 1 Contender\u2019s Match: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 455,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "a[aria-label=\"Naraku\\ vs\\.\\ Mason\\ Rook\\ \\|\\ NXT\\ Title\\ No\\.\\ 1\\ Contender\u2019s\\ Match\\:\\ NXT\\ highlights\\,\\ June\\ 9\\,\\ 2026\"]"
+    },
+    {
+      "ref": "ref_17",
+      "role": "img",
+      "name": "WWE Photo. 02 minutes 52 seconds. Opens a video Naraku vs. Mason Rook | NXT Title No. 1 Contender\u2019s Match: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 455,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "img[aria-label=\"WWE\\ Photo\\.\\ 02\\ minutes\\ 52\\ seconds\\.\\ Opens\\ a\\ video\"]"
+    },
+    {
+      "ref": "ref_18",
+      "role": "a",
+      "name": "Kendal Grey vs. Kelani Jordan | Women\u2019s Title No. 1 Contender\u2019s Match: NXT highlights, June 9, 2026 Kendal Grey vs. Kelani Jordan | Women\u2019s Title No. 1 Contender\u2019s Match: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 632,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "a[aria-label=\"Kendal\\ Grey\\ vs\\.\\ Kelani\\ Jordan\\ \\|\\ Women\u2019s\\ Title\\ No\\.\\ 1\\ Contender\u2019s\\ Match\\:\\ NXT\\ highlights\\,\\ June\\ 9\\,\\ 2026\"]"
+    },
+    {
+      "ref": "ref_19",
+      "role": "img",
+      "name": "WWE Photo. 03 minutes 32 seconds. Opens a video Kendal Grey vs. Kelani Jordan | Women\u2019s Title No. 1 Contender\u2019s Match: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 632,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "img[aria-label=\"WWE\\ Photo\\.\\ 03\\ minutes\\ 32\\ seconds\\.\\ Opens\\ a\\ video\"]"
+    },
+    {
+      "ref": "ref_20",
+      "role": "a",
+      "name": "Saquon Shugars attacks DarkState with a baseball bat: NXT highlights, June 9, 2026 Saquon Shugars attacks DarkState with a baseball bat: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 809,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "a[aria-label=\"Saquon\\ Shugars\\ attacks\\ DarkState\\ with\\ a\\ baseball\\ bat\\:\\ NXT\\ highlights\\,\\ June\\ 9\\,\\ 2026\"]"
+    },
+    {
+      "ref": "ref_21",
+      "role": "img",
+      "name": "WWE Photo. 02 minutes 58 seconds. Opens a video Saquon Shugars attacks DarkState with a baseball bat: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 809,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "img[aria-label=\"WWE\\ Photo\\.\\ 02\\ minutes\\ 58\\ seconds\\.\\ Opens\\ a\\ video\"]"
+    },
+    {
+      "ref": "ref_22",
+      "role": "a",
+      "name": "Mr. NXT Pageant turns ugly as Tristan Angels brutalizes Shiloh Hill: NXT highlights, June 9, 2026 Mr. NXT Pageant turns ugly as Tristan Angels brutalizes Shiloh Hill: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 986,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "a[aria-label=\"Mr\\.\\ NXT\\ Pageant\\ turns\\ ugly\\ as\\ Tristan\\ Angels\\ brutalizes\\ Shiloh\\ Hill\\:\\ NXT\\ highlights\\,\\ June\\ 9\\,\\ 2026\"]"
+    },
+    {
+      "ref": "ref_23",
+      "role": "img",
+      "name": "WWE Photo. 03 minutes 41 seconds. Opens a video Mr. NXT Pageant turns ugly as Tristan Angels brutalizes Shiloh Hill: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 986,
+        "y": 68,
+        "w": 167,
+        "h": 94
+      },
+      "selector": "img[aria-label=\"WWE\\ Photo\\.\\ 03\\ minutes\\ 41\\ seconds\\.\\ Opens\\ a\\ video\"]"
+    },
+    {
+      "ref": "ref_24",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 285,
+        "y": 190,
+        "w": 195,
+        "h": 110
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_25",
+      "role": "a",
+      "name": "SummerSlam Tickets",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 221,
+        "w": 220,
+        "h": 48
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_26",
+      "role": "a",
+      "name": "SummerSlam Individual event tickets on sale now",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 480,
+        "y": 232,
+        "w": 677,
+        "h": 26
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_27",
+      "role": "a",
+      "name": "Get tickets now",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1145,
+        "y": 235,
+        "w": 128,
+        "h": 16
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_28",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 236,
+        "w": 970,
+        "h": 17
+      },
+      "selector": "#aw0"
+    },
+    {
+      "ref": "ref_29",
+      "role": "dialog",
+      "name": "Advertisement",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 214,
+        "y": 330,
+        "w": 970,
+        "h": 250
+      },
+      "selector": "#wwe-ad-header-588635914"
+    },
+    {
+      "ref": "ref_30",
+      "role": "iframe",
+      "name": "Advertisement 3rd party ad content google_ads_iframe_/4675/desktop/homepage_1",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 214,
+        "y": 330,
+        "w": 970,
+        "h": 250
+      },
+      "selector": "#google_ads_iframe_\\/4675\\/desktop\\/homepage_1"
+    },
+    {
+      "ref": "ref_31",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 262,
+        "y": 610,
+        "w": 657,
+        "h": 370
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_32",
+      "role": "a",
+      "name": "SmackDown Preview for 06/12",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 949,
+        "y": 642,
+        "w": 203,
+        "h": 25
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_33",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 662,
+        "w": 212,
+        "h": 65
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_34",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 110,
+        "y": 814,
+        "w": 31,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_35",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 141,
+        "y": 814,
+        "w": 31,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_36",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 172,
+        "y": 815,
+        "w": 31,
+        "h": 19
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_37",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 178,
+        "y": 815,
+        "w": 19,
+        "h": 19
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_38",
+      "role": "a",
+      "name": "Preview",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 919,
+        "y": 920,
+        "w": 213,
+        "h": 60
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_39",
+      "role": "a",
+      "name": "Watch highlights",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1134,
+        "y": 920,
+        "w": 213,
+        "h": 60
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_40",
+      "role": "a",
+      "name": "Lyra Valkyria, Sol Ruca, Jade Cargill, and Charlotte Flair battle in Queen of the Ring Tournament",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 1009,
+        "w": 412,
+        "h": 232
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_41",
+      "role": "a",
+      "name": "Jey Uso, LA Knight, Finn B\u00e1lor and Royce Keys square off in the King of the Ring Tournament",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 492,
+        "y": 1009,
+        "w": 412,
+        "h": 232
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_42",
+      "role": "a",
+      "name": "Paige & Brie Bella battle Fallon Henley & Lainey Reid of Fatal Influence",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 935,
+        "y": 1009,
+        "w": 412,
+        "h": 232
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_43",
+      "role": "a",
+      "name": "Lyra Valkyria, Sol Ruca, Jade Cargill, and Charlotte Flair battle in Queen of the Ring Tournament",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 1245,
+        "w": 412,
+        "h": 110
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_44",
+      "role": "a",
+      "name": "Jey Uso, LA Knight, Finn B\u00e1lor and Royce Keys square off in the King of the Ring Tournament",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 492,
+        "y": 1245,
+        "w": 412,
+        "h": 110
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_45",
+      "role": "a",
+      "name": "Paige & Brie Bella battle Fallon Henley & Lainey Reid of Fatal Influence",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 935,
+        "y": 1245,
+        "w": 412,
+        "h": 110
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_46",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 1383,
+        "w": 1397,
+        "h": 175
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_47",
+      "role": "a",
+      "name": "Click here for more WWE News More WWE News",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1192,
+        "y": 1610,
+        "w": 155,
+        "h": 51
+      },
+      "selector": "a[aria-label=\"Click\\ here\\ for\\ more\\ WWE\\ News\"]"
+    },
+    {
+      "ref": "ref_48",
+      "role": "a",
+      "name": "Lucha Libre AAA preview: June 13, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 30,
+        "y": 1699,
+        "w": 312,
+        "h": 176
+      },
+      "selector": "a[aria-label=\"Lucha\\ Libre\\ AAA\\ preview\\:\\ June\\ 13\\,\\ 2026\"]"
+    },
+    {
+      "ref": "ref_49",
+      "role": "a",
+      "name": "First-ever WWE Sunday Night's Main Event to take place during Labor Day weekend in Atlanta",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 372,
+        "y": 1699,
+        "w": 312,
+        "h": 176
+      },
+      "selector": "a[aria-label=\"First-ever\\ WWE\\ Sunday\\ Night\\'s\\ Main\\ Event\\ to\\ take\\ place\\ during\\ Labor\\ Day\\ weekend\\ in\\ Atlanta\"]"
+    },
+    {
+      "ref": "ref_50",
+      "role": "a",
+      "name": "New Orleans to host Money in the Bank on Saturday, October 10",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 714,
+        "y": 1699,
+        "w": 312,
+        "h": 176
+      },
+      "selector": "a[aria-label=\"New\\ Orleans\\ to\\ host\\ Money\\ in\\ the\\ Bank\\ on\\ Saturday\\,\\ October\\ 10\"]"
+    },
+    {
+      "ref": "ref_51",
+      "role": "a",
+      "name": "2026 King & Queen of the Ring Tournament Bracket",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1055,
+        "y": 1699,
+        "w": 312,
+        "h": 176
+      },
+      "selector": "a[aria-label=\"\\32 026\\ King\\ \\&\\ Queen\\ of\\ the\\ Ring\\ Tournament\\ Bracket\"]"
+    },
+    {
+      "ref": "ref_52",
+      "role": "a",
+      "name": "Lucha Libre AAA preview: June 13, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 30,
+        "y": 1885,
+        "w": 272,
+        "h": 48
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_53",
+      "role": "a",
+      "name": "First-ever WWE Sunday Night's Main Event to take place during Labor Day weekend in Atlanta",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 372,
+        "y": 1885,
+        "w": 272,
+        "h": 72
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_54",
+      "role": "a",
+      "name": "New Orleans to host Money in the Bank on Saturday, October 10",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 714,
+        "y": 1885,
+        "w": 272,
+        "h": 48
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_55",
+      "role": "a",
+      "name": "2026 King & Queen of the Ring Tournament Bracket",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1055,
+        "y": 1885,
+        "w": 272,
+        "h": 48
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_56",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 311,
+        "y": 1891,
+        "w": 31,
+        "h": 19
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_57",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 317,
+        "y": 1891,
+        "w": 19,
+        "h": 19
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_58",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 653,
+        "y": 1891,
+        "w": 31,
+        "h": 19
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_59",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 659,
+        "y": 1891,
+        "w": 19,
+        "h": 19
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_60",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 994,
+        "y": 1891,
+        "w": 31,
+        "h": 19
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_61",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1000,
+        "y": 1891,
+        "w": 19,
+        "h": 19
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_62",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1336,
+        "y": 1891,
+        "w": 31,
+        "h": 19
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_63",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1342,
+        "y": 1891,
+        "w": 19,
+        "h": 19
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_64",
+      "role": "a",
+      "name": "WWE NXT",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 2057,
+        "w": 93,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_65",
+      "role": "a",
+      "name": "FULL MATCH: Tatum Paxley vs. Zaria",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 2057,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_66",
+      "role": "a",
+      "name": "FULL MATCH: Tatum Paxley vs. Zaria | NXT Women\u2019s North American Title Match: NXT, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 2057,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_67",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 2127,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_68",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 2127,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_69",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 2128,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_70",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 2128,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_71",
+      "role": "a",
+      "name": "WWE NXT",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 2338,
+        "w": 93,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_72",
+      "role": "a",
+      "name": "Saquon Shugars attacks DarkState",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 2338,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_73",
+      "role": "a",
+      "name": "Saquon Shugars attacks DarkState with a baseball bat: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 2338,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_74",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 2409,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_75",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 2409,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_76",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 2409,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_77",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 2409,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_78",
+      "role": "a",
+      "name": "WWE NXT",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 2619,
+        "w": 93,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_79",
+      "role": "a",
+      "name": "Mr. NXT Pageant turns ugly as Angels attacks Hill",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 2619,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_80",
+      "role": "a",
+      "name": "Mr. NXT Pageant turns ugly as Tristan Angels brutalizes Shiloh Hill: NXT highlights, June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 2619,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_81",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 2690,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_82",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 2690,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_83",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 2690,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_84",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 2690,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_85",
+      "role": "a",
+      "name": "Saturday Night's Main Event",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 2901,
+        "w": 197,
+        "h": 46
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_86",
+      "role": "a",
+      "name": "First-ever WWE Sunday Night's Main Event to take place during Labor Day weekend in Atlanta",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 2901,
+        "w": 312,
+        "h": 190
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_87",
+      "role": "a",
+      "name": "First-ever WWE Sunday Night's Main Event to take place during Labor Day weekend in Atlanta",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 2901,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_88",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 2984,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_89",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 2984,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_90",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 2984,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_91",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 2984,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_92",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 3182,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_93",
+      "role": "a",
+      "name": "The Vision attack Rollins, Evans advances",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 3182,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_94",
+      "role": "a",
+      "name": "The Vision attack Seth Rollins, Je\u2019Von Evans advances in tournament: Raw highlights, June 8, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 3182,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_95",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 3252,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_96",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 3252,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_97",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 3253,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_98",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 3253,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_99",
+      "role": "a",
+      "name": "WWE Photo",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 3462,
+        "w": 1397,
+        "h": 786
+      },
+      "selector": "a[aria-label=\"WWE\\ Photo\"]"
+    },
+    {
+      "ref": "ref_100",
+      "role": "a",
+      "name": "WWE NXT",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 4032,
+        "w": 93,
+        "h": 38
+      },
+      "selector": "a[aria-label=\"WWE\\ NXT\"]"
+    },
+    {
+      "ref": "ref_101",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 4128,
+        "w": 31,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_102",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 81,
+        "y": 4128,
+        "w": 31,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_103",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 112,
+        "y": 4129,
+        "w": 31,
+        "h": 19
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_104",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 118,
+        "y": 4129,
+        "w": 19,
+        "h": 19
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_105",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 4301,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_106",
+      "role": "a",
+      "name": "Gable and Lee helps Penta and Mysterio",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 4301,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_107",
+      "role": "a",
+      "name": "Chad Gable and Dragon Lee help Penta and Rey Mysterio repel Ethan Page and Rusev: Raw, June 8, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 4301,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_108",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 4372,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_109",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 4372,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_110",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 4372,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_111",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 4372,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_112",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 4582,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_113",
+      "role": "a",
+      "name": "LA Knight verbally unloads on Jey Uso",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 4582,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_114",
+      "role": "a",
+      "name": "LA Knight verbally unloads on Jey Uso: Raw highlights, June 8, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 4582,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_115",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 4653,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_116",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 4653,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_117",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 4653,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_118",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 4653,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_119",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 4864,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_120",
+      "role": "a",
+      "name": "Sol Ruca vs. Lyra Valkyria",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 4864,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_121",
+      "role": "a",
+      "name": "Sol Ruca defends Women\u2019s Intercontinental Title against Lyra Valkyria: Raw highlights, June 8, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 4864,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_122",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 4934,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_123",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 4934,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_124",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 4934,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_125",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 4934,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_126",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 5145,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_127",
+      "role": "a",
+      "name": "Jacob Fatu refuses to do The Usos\u2019 dirty work",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 5145,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_128",
+      "role": "a",
+      "name": "Jacob Fatu refuses to do The Usos\u2019 dirty work to Seth Rollins: Raw highlights, June 8, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 5145,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_129",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 5215,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_130",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 5215,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_131",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 5215,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_132",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 5215,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_133",
+      "role": "a",
+      "name": "SmackDown",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 5426,
+        "w": 119,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_134",
+      "role": "a",
+      "name": "Dominik Mysterio earns stunning win",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 5426,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_135",
+      "role": "a",
+      "name": "Dominik Mysterio earns shocking King of the Ring victory: SmackDown highlights, June 5, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 5426,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_136",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 5496,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_137",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 5496,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_138",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 5497,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_139",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 5497,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_140",
+      "role": "a",
+      "name": "View all Shows",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1216,
+        "y": 5726,
+        "w": 141,
+        "h": 51
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_141",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1067,
+        "y": 5825,
+        "w": 301,
+        "h": 96
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_142",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 30,
+        "y": 5945,
+        "w": 301,
+        "h": 169
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_143",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 376,
+        "y": 5945,
+        "w": 301,
+        "h": 169
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_144",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 721,
+        "y": 5945,
+        "w": 301,
+        "h": 169
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_145",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1067,
+        "y": 5945,
+        "w": 301,
+        "h": 169
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_146",
+      "role": "button",
+      "name": "Previous",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": -25,
+        "y": 6012,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "button"
+    },
+    {
+      "ref": "ref_147",
+      "role": "button",
+      "name": "Next",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1402,
+        "y": 6012,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "button"
+    },
+    {
+      "ref": "ref_148",
+      "role": "a",
+      "name": "Full Results",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1067,
+        "y": 6266,
+        "w": 84,
+        "h": 19
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_149",
+      "role": "a",
+      "name": "Full Results",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 30,
+        "y": 6306,
+        "w": 84,
+        "h": 19
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_150",
+      "role": "a",
+      "name": "Full Results",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 376,
+        "y": 6306,
+        "w": 84,
+        "h": 19
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_151",
+      "role": "a",
+      "name": "Full Results",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 721,
+        "y": 6326,
+        "w": 84,
+        "h": 19
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_152",
+      "role": "a",
+      "name": "SmackDown",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 6431,
+        "w": 119,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_153",
+      "role": "a",
+      "name": "Chad Gable apologizes to Rey Fenix",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 6431,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_154",
+      "role": "a",
+      "name": "Chad Gable apologizes to Rey Fenix: SmackDown highlights, June 5, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 6431,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_155",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 6502,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_156",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 6502,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_157",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 6502,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_158",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 6502,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_159",
+      "role": "a",
+      "name": "SmackDown",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 6713,
+        "w": 119,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_160",
+      "role": "a",
+      "name": "Charlotte, Tiffany and Jade challenge Rhea",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 6713,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_161",
+      "role": "a",
+      "name": "Charlotte Flair, Tiffany Stratton and Jade Cargill challenge Rhea Ripley: SmackDown, June 5, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 6713,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_162",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 6783,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_163",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 6783,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_164",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 6783,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_165",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 6783,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_166",
+      "role": "a",
+      "name": "SmackDown",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 6994,
+        "w": 119,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_167",
+      "role": "a",
+      "name": "Priest prevents R-Truth from helping Keys",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 6994,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_168",
+      "role": "a",
+      "name": "Damian Priest prevents R-Truth from helping Royce Keys: SmackDown highlights, June 5, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 6994,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_169",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 7064,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_170",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 7064,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_171",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 7065,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_172",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 7065,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_173",
+      "role": "a",
+      "name": "SmackDown",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 7275,
+        "w": 119,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_174",
+      "role": "a",
+      "name": "Giulia snaps on Kiana James",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 7275,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_175",
+      "role": "a",
+      "name": "Giulia snaps on Kiana James: SmackDown highlights, June 5, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 7275,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_176",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 7345,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_177",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 7345,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_178",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 7346,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_179",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 7346,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_180",
+      "role": "a",
+      "name": "SmackDown",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 7556,
+        "w": 119,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_181",
+      "role": "a",
+      "name": "Danhausen\u2019s gadget electrocutes The Miz",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 7556,
+        "w": 312,
+        "h": 76
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_182",
+      "role": "a",
+      "name": "Danhausen\u2019s gadget electrocutes The Miz: SmackDown highlights, June 5, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 7556,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_183",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 7627,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_184",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 7627,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_185",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 7627,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_186",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 7627,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_187",
+      "role": "a",
+      "name": "",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 7797,
+        "w": 1397,
+        "h": 660
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_188",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 8498,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_189",
+      "role": "a",
+      "name": "Ruca celebrates Women\u2019s Intercontinental Title win",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 8498,
+        "w": 312,
+        "h": 152
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_190",
+      "role": "a",
+      "name": "Sol Ruca celebrates title win against Becky Lynch: Raw highlights, June 1, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 8498,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_191",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 8568,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_192",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 8568,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_193",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 8568,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_194",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 8568,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_195",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 8779,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_196",
+      "role": "a",
+      "name": "All of Italy acknowledges Roman Reigns",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 8779,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_197",
+      "role": "a",
+      "name": "All of Italy acknowledges Roman Reigns: Raw highlights, June 1, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 8779,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_198",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 8849,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_199",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 8849,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_200",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 8850,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_201",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 8850,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_202",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 9060,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_203",
+      "role": "a",
+      "name": "Rey Mysterio & Dragon Lee vs. Ethan Page & Rusev",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 9060,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_204",
+      "role": "a",
+      "name": "Rey Mysterio & Dragon Lee vs. Ethan Page & Rusev: Raw highlights, June 1, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 9060,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_205",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 9131,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_206",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 9131,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_207",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 9131,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_208",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 9131,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_209",
+      "role": "a",
+      "name": "Raw",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 9341,
+        "w": 60,
+        "h": 33
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_210",
+      "role": "a",
+      "name": "Knight accuses Pearce of aligning with Reigns",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 9341,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_211",
+      "role": "a",
+      "name": "LA Knight accuses Adam Pearce of aligning with Roman Reigns: Raw highlights, June 1, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 9341,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_212",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 9412,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_213",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 9412,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_214",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 9412,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_215",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 9412,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_216",
+      "role": "a",
+      "name": "WWE Clash at the Castle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 9623,
+        "w": 197,
+        "h": 46
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_217",
+      "role": "a",
+      "name": "Rhea Ripley vs. Jade Cargill | Women\u2019s Title Match",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 267,
+        "y": 9623,
+        "w": 312,
+        "h": 114
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_218",
+      "role": "a",
+      "name": "Rhea Ripley vs. Jade Cargill | WWE Women\u2019s Title Match: WWE Clash in Italy 2026 highlights",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 600,
+        "y": 9623,
+        "w": 427,
+        "h": 240
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_219",
+      "role": "a",
+      "name": "Facebook",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 50,
+        "y": 9706,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"Facebook\"]"
+    },
+    {
+      "ref": "ref_220",
+      "role": "a",
+      "name": "X",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 82,
+        "y": 9706,
+        "w": 32,
+        "h": 21
+      },
+      "selector": "a[aria-label=\"X\"]"
+    },
+    {
+      "ref": "ref_221",
+      "role": "a",
+      "name": "Toggle",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 114,
+        "y": 9706,
+        "w": 32,
+        "h": 20
+      },
+      "selector": "a[aria-label=\"Toggle\"]"
+    },
+    {
+      "ref": "ref_222",
+      "role": "img",
+      "name": "More Share Options",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 120,
+        "y": 9706,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "svg"
+    },
+    {
+      "ref": "ref_223",
+      "role": "a",
+      "name": "More WWE Videos",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1193,
+        "y": 9923,
+        "w": 164,
+        "h": 51
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_224",
+      "role": "a",
+      "name": "03:11",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 52,
+        "y": 10081,
+        "w": 244,
+        "h": 137
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_225",
+      "role": "a",
+      "name": "11:31",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 402,
+        "y": 10081,
+        "w": 244,
+        "h": 137
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_226",
+      "role": "a",
+      "name": "11:45",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 751,
+        "y": 10081,
+        "w": 244,
+        "h": 137
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_227",
+      "role": "a",
+      "name": "03:39",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1100,
+        "y": 10081,
+        "w": 244,
+        "h": 137
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_228",
+      "role": "button",
+      "name": "Previous",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": -25,
+        "y": 10092,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "button"
+    },
+    {
+      "ref": "ref_229",
+      "role": "button",
+      "name": "Next",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1402,
+        "y": 10092,
+        "w": 20,
+        "h": 20
+      },
+      "selector": "button"
+    },
+    {
+      "ref": "ref_230",
+      "role": "a",
+      "name": "Raw highlights: June 8, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 10218,
+        "w": 349,
+        "h": 93
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_231",
+      "role": "a",
+      "name": "WWE NXT highlights: June 9, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 349,
+        "y": 10218,
+        "w": 349,
+        "h": 93
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_232",
+      "role": "a",
+      "name": "SmackDown highlights: June 5, 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 699,
+        "y": 10218,
+        "w": 349,
+        "h": 93
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_233",
+      "role": "a",
+      "name": "WWE Clash in Italy highlights 2026",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 1048,
+        "y": 10218,
+        "w": 349,
+        "h": 93
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_234",
+      "role": "a",
+      "name": "Load more items",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 52,
+        "y": 10395,
+        "w": 968,
+        "h": 44
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_235",
+      "role": "footer",
+      "name": "footer-navigation",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 0,
+        "y": 10531,
+        "w": 1397,
+        "h": 312
+      },
+      "selector": "footer[aria-label=\"footer-navigation\"]"
+    },
+    {
+      "ref": "ref_236",
+      "role": "navigation",
+      "name": "Footer Corporate Corporate Careers Impact Contact WWE.com WWE News WWE Videos WWE Photos Priority Pass About Privacy Pol...",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 45,
+        "y": 10579,
+        "w": 1197,
+        "h": 200
+      },
+      "selector": "#block-wwe-theme-footer"
+    },
+    {
+      "ref": "ref_237",
+      "role": "a",
+      "name": "Corporate",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 45,
+        "y": 10619,
+        "w": 112,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_238",
+      "role": "a",
+      "name": "WWE News",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 205,
+        "y": 10619,
+        "w": 96,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_239",
+      "role": "a",
+      "name": "Privacy Policy",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 350,
+        "y": 10619,
+        "w": 186,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_240",
+      "role": "a",
+      "name": "Security",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 584,
+        "y": 10619,
+        "w": 117,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_241",
+      "role": "a",
+      "name": "(opens in a new window)",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 750,
+        "y": 10619,
+        "w": 136,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_242",
+      "role": "a",
+      "name": "Careers",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 45,
+        "y": 10659,
+        "w": 112,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_243",
+      "role": "a",
+      "name": "WWE Videos",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 205,
+        "y": 10659,
+        "w": 96,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_244",
+      "role": "a",
+      "name": "Copyright",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 350,
+        "y": 10659,
+        "w": 186,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_245",
+      "role": "a",
+      "name": "Help Center",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 584,
+        "y": 10659,
+        "w": 117,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_246",
+      "role": "a",
+      "name": "Impact",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 45,
+        "y": 10699,
+        "w": 112,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_247",
+      "role": "a",
+      "name": "WWE Photos",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 205,
+        "y": 10699,
+        "w": 96,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_248",
+      "role": "a",
+      "name": "Terms of Use",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 350,
+        "y": 10699,
+        "w": 186,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_249",
+      "role": "a",
+      "name": "Cookie Policy",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 584,
+        "y": 10699,
+        "w": 117,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_250",
+      "role": "a",
+      "name": "Contact",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 45,
+        "y": 10739,
+        "w": 112,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_251",
+      "role": "a",
+      "name": "Priority Pass",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 205,
+        "y": 10739,
+        "w": 96,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_252",
+      "role": "a",
+      "name": "Your Privacy Choices",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 350,
+        "y": 10739,
+        "w": 186,
+        "h": 24
+      },
+      "selector": "a"
+    },
+    {
+      "ref": "ref_253",
+      "role": "a",
+      "name": "Closed Captions",
+      "value": "",
+      "visible": true,
+      "rect": {
+        "x": 584,
+        "y": 10739,
+        "w": 117,
+        "h": 24
+      },
+      "selector": "a"
+    }
+  ]
+}
