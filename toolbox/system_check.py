@@ -28,6 +28,15 @@ ALLOWED_TARGETS = {
     ],
 }
 
+# Synonyms/aliases so natural-language prompts like "check system processes" resolve.
+_TARGET_ALIASES = {
+    "usb": ["usb", "usbs"],
+    "disks": ["disks", "disk", "drive", "drives", "storage"],
+    "mounts": ["mounts", "mount", "mounted", "filesystems", "file systems"],
+    "processes": ["processes", "process", "tasks", "running processes", "cpu"],
+    "services": ["services", "service", "failed services", "systemctl"],
+}
+
 
 def _run(cmd: list[str]) -> str:
     try:
@@ -51,9 +60,24 @@ def _run(cmd: list[str]) -> str:
     return out or "(no output)"
 
 
+def _extract_target(args: dict) -> str | None:
+    """Resolve a target from explicit args or natural-language text."""
+    target = (args.get("target") or "").strip().lower()
+    if target in ALLOWED_TARGETS:
+        return target
+
+    # Mary may pass the original prompt in a text/query field.
+    text = (args.get("text") or args.get("query") or args.get("prompt") or "").lower()
+    for canonical, aliases in _TARGET_ALIASES.items():
+        for alias in aliases:
+            if alias in text:
+                return canonical
+    return None
+
+
 def run(args: dict | None = None) -> str:
     args = args or {}
-    target = (args.get("target") or "").strip().lower()
+    target = _extract_target(args)
     if not target:
         return f"[tool error] target is required. Allowed: {', '.join(ALLOWED_TARGETS)}"
     if target not in ALLOWED_TARGETS:
