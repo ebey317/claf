@@ -49,6 +49,8 @@ def main() -> int:
     parser.add_argument("--set", help="Set mode explicitly")
     parser.add_argument("--list", action="store_true", help="List valid modes")
     parser.add_argument("--json", action="store_true", help="Output JSON")
+    parser.add_argument("--export", action="store_true",
+                        help="Output shell export command for the current mode")
     args = parser.parse_args()
 
     tool_args = {}
@@ -60,7 +62,9 @@ def main() -> int:
         tool_args["list"] = True
 
     result = run(tool_args)
-    if args.json:
+    if args.export:
+        print(f"export CLAF_PERMISSION_MODE={cp.persisted_mode()}")
+    elif args.json:
         print(json.dumps({"result": result, "mode": cp.current_mode()}))
     else:
         print(result)

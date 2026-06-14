@@ -18,6 +18,13 @@ set -euo pipefail
 PROXY_URL="${CLAF_PROXY_URL:-http://localhost:8000}"
 CLAF_DIR="$HOME/projects/claf"
 
+# Source shell integration if available so claf-mode function and Shift+Tab
+# binding are available in the launched terminal.
+if [ -f "$CLAF_DIR/claf_shell_integration.sh" ]; then
+    # shellcheck source=claf_shell_integration.sh
+    source "$CLAF_DIR/claf_shell_integration.sh"
+fi
+
 # Sync CLAF permission mode with Claude Code.
 # Priority: --permission-mode flag > CLAF_PERMISSION_MODE env > ~/.claf/settings.json > default
 PERMISSION_MODE="${CLAF_PERMISSION_MODE:-}"

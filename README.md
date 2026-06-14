@@ -118,8 +118,10 @@ Bind **Shift+Tab** in your terminal to cycle CLAF mode (matches Claude Code's sh
 
 ```bash
 # Add to ~/.bashrc
-bind '"\e[Z": "python3 ~/projects/claf/toolbox/run_tool.py claf_mode '"'"'{"cycle": true}'"'"'\n"'
+source "$HOME/projects/claf/claf_shell_integration.sh"
 ```
+
+This gives you a `claf-mode` shell function that keeps `CLAF_PERMISSION_MODE` in sync with the persisted mode, and binds **Shift+Tab** to cycle modes the same way Claude Code does.
 
 The current mode is persisted in `~/.claf/settings.json` and injected into the system prompt on every turn.
 

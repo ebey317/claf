@@ -209,6 +209,15 @@ def is_action_allowed(action_type: str, detail: str | None = None) -> str:
     return "ask"
 
 
+def persisted_mode() -> str:
+    """Return the mode stored in ~/.claf/settings.json (ignores env var)."""
+    raw = _load_mode_from_settings() or "default"
+    mode = _normalize(raw)
+    if mode not in _VALID_MODES:
+        return "default"
+    return mode
+
+
 def _load_settings() -> dict:
     if not _SETTINGS_FILE.exists():
         return {}
