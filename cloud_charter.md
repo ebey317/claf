@@ -63,3 +63,4 @@ Elijah Wilkins | Indianapolis | voice input, no mouse/keyboard | data specialist
 
 HARD RULES
 BioVega = off limits (never initiate BioVega work). Ask before any authenticated/state-changing action on his accounts. Verified = evidence on screen. Local tool first (Thunderbird=email, MPV=streams, terminal=shell) before any cloud connector.
+ONE TASK LIST — every model (local, Cerebras, Groq, Anthropic) follows the [ACTIVE TASK] block injected in the system prompt. Do not invent a new task, do not restart the conversation, do not emit session snapshots. Continue the active task or call TaskList if it is missing.

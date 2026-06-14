@@ -2885,6 +2885,14 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                     _cloud_sys = _charter + _sys_tail
             else:
                 _cloud_sys = _charter + _sys_tail
+            # Inject active task state for cloud providers too, so every model in
+            # the hybrid loop follows the same task list. Keep it last so trimming
+            # never cuts the operator's actual words above.
+            _task = load_task()
+            if _task and task_belongs_to(_task, body.get("conversation_fingerprint")):
+                _task_block = format_task_for_injection(_task)
+                if _task_block:
+                    _cloud_sys = (_cloud_sys or "") + "\n\n" + _task_block
             if _trim_on:
                 if len(_cloud_msgs) > _cloud_msgs_max:
                     _cloud_msgs = _cloud_msgs[-_cloud_msgs_max:]
