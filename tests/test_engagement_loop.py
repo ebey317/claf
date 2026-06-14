@@ -21,11 +21,11 @@ def test_build_checkpoint_text():
     qa = [("Step 1: run ls", "file.txt")]
     remaining = ["Step 2: run pwd"]
     text = el._build_checkpoint_text("Test Task", 1, 2, qa, remaining)
-    assert "Checkpoint — Test Task" in text
+    assert "Mary Context Reset — Test Task" in text
     assert "1/2 steps completed" in text
     assert "Step 1: run ls" in text
     assert "Step 2: run pwd" in text
-    assert "PAUSED" in text
+    assert "Continue?" in text
 
 
 def test_mark_task_paused():

@@ -23,7 +23,10 @@ CHECKPOINT_FILE = Path.home() / ".claf" / "engagement_checkpoint.json"
 NOTEPAD = Path.home() / "MD" / "notepad.md"
 CLAF_URL = os.environ.get("CLAF_URL", "http://localhost:8000/v1/messages")
 MAX_TURNS = int(os.environ.get("CLAF_ENGAGEMENT_MAX_TURNS", "20"))
-CHECKPOINT_EVERY = int(os.environ.get("CLAF_CHECKPOINT_EVERY", "5"))
+# Small models (e.g. qwen2.5-coder:3b) lose coherence after ~4 tool calls in one
+# pass.  The checkpoint is a context reset: stop, record done/remaining, then
+# resume from a fresh window on the next loop run.
+CHECKPOINT_EVERY = int(os.environ.get("CLAF_CHECKPOINT_EVERY", "4"))
 
 # Make claf_permissions importable from the toolbox/ subdirectory.
 _CLAF_DIR = Path(__file__).resolve().parent.parent
@@ -293,12 +296,12 @@ def _build_checkpoint_text(
     qa: list[tuple[str, str]],
     remaining_steps: list[str],
 ) -> str:
-    """Return a human-readable checkpoint block for notepad.md."""
+    """Return a model-facing context-reset block for notepad.md."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = [
-        f"## Checkpoint — {task_name} — {now}",
+        f"## Mary Context Reset — {task_name} — {now}",
         "",
-        f"Progress: {completed}/{total} steps completed.",
+        f"Progress: {completed}/{total} steps completed. Stopping here to reset context before continuing.",
         "",
         "### Done so far",
     ]
@@ -306,14 +309,14 @@ def _build_checkpoint_text(
         lines.append(f"- {q}: {str(a)[:120]}")
     if not qa:
         lines.append("- (no steps completed yet)")
-    lines.extend(["", "### Next"])
+    lines.extend(["", "### Remaining"])
     for step in remaining_steps:
         lines.append(f"- {step}")
     if not remaining_steps:
         lines.append("- (no remaining steps)")
     lines.extend([
         "",
-        "Status: PAUSED — run `python3 ~/projects/claf/toolbox/engagement_loop.py` to continue.",
+        "Continue? Re-run `python3 ~/projects/claf/toolbox/engagement_loop.py` to resume from the next step with a fresh context window.",
         "",
     ])
     return "\n".join(lines)
