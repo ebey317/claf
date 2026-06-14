@@ -85,6 +85,21 @@
         "open settings",
         "open ollama"
       ]
+    },
+    {
+      "name": "engagement_loop",
+      "enabled": true,
+      "category": "shell",
+      "requires_approval": false,
+      "requires_credentials": false,
+      "description": "Run the engagement loop once: claim the first \u23f3 KIMI task in HANDOFF.md, execute its steps, and mark it \u2705 or \u26d4 BLOCKED.",
+      "commands": [
+        "run task list",
+        "work through backlog",
+        "batch mode",
+        "engagement loop",
+        "process handoff queue"
+      ]
     }
   ]
 }

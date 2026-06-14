@@ -21,6 +21,8 @@ KNOWN COMMANDS — execute immediately with the exact tool shown
   EXAMPLE: open hypnotix → Bash: python3 ~/projects/claf/toolbox/run_tool.py open_app '{"app": "hypnotix"}'
   EXAMPLE: open writer → Bash: python3 ~/projects/claf/toolbox/run_tool.py open_app '{"app": "writer"}'
   EXAMPLE: open ollama → Bash: python3 ~/projects/claf/toolbox/run_tool.py open_app '{"app": "ollama"}'
+- run task list | work through backlog | batch mode | engagement loop | process handoff queue → Bash: python3 ~/projects/claf/toolbox/run_tool.py engagement_loop '{}' [NEVER: infinite loops, recursive self-queuing]
+  EXAMPLE: run task list → Bash: python3 ~/projects/claf/toolbox/run_tool.py engagement_loop '{}'
 <!-- TOOLBOX MAPPINGS END -->
 
 IDENTITY

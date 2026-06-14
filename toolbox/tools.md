@@ -44,3 +44,11 @@ Add a tool here, then run `python3 ~/projects/claf/toolbox/mint_tool.py` to rege
 - **example:** open hypnotix → Bash: python3 ~/projects/claf/toolbox/run_tool.py open_app '{"app": "hypnotix"}'
 - **example:** open writer → Bash: python3 ~/projects/claf/toolbox/run_tool.py open_app '{"app": "writer"}'
 - **example:** open ollama → Bash: python3 ~/projects/claf/toolbox/run_tool.py open_app '{"app": "ollama"}'
+
+## engagement_loop
+- **command:** run task list | work through backlog | batch mode | engagement loop | process handoff queue
+- **args:** (none)
+- **description:** Run the engagement loop once: claim the first ⏳ KIMI task in HANDOFF.md, execute its steps, and mark it ✅ or ⛔ BLOCKED.
+- **module:** engagement_loop.py
+- **never:** infinite loops, recursive self-queuing
+- **example:** run task list → Bash: python3 ~/projects/claf/toolbox/run_tool.py engagement_loop '{}'
