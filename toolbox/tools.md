@@ -52,3 +52,12 @@ Add a tool here, then run `python3 ~/projects/claf/toolbox/mint_tool.py` to rege
 - **module:** engagement_loop.py
 - **never:** infinite loops, recursive self-queuing
 - **example:** run task list → Bash: python3 ~/projects/claf/toolbox/run_tool.py engagement_loop '{}'
+
+## claf_mode
+- **command:** claf mode | permission mode | shift tab | cycle mode | what mode | set mode
+- **args:** cycle (bool, optional) | set (string, optional) | list (bool, optional)
+- **description:** Get, set, or cycle CLAF's permission mode. Matches Claude Code's Shift+Tab cycle: default → acceptEdits → plan → auto.
+- **module:** claf_mode.py
+- **never:** silently change mode without reporting it
+- **example:** shift tab → Bash: python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"cycle": true}'
+- **example:** set mode to auto → Bash: python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"set": "auto"}'

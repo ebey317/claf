@@ -100,6 +100,22 @@
         "engagement loop",
         "process handoff queue"
       ]
+    },
+    {
+      "name": "claf_mode",
+      "enabled": true,
+      "category": "shell",
+      "requires_approval": false,
+      "requires_credentials": false,
+      "description": "Get, set, or cycle CLAF's permission mode. Matches Claude Code's Shift+Tab cycle: default \u2192 acceptEdits \u2192 plan \u2192 auto.",
+      "commands": [
+        "claf mode",
+        "permission mode",
+        "shift tab",
+        "cycle mode",
+        "what mode",
+        "set mode"
+      ]
     }
   ]
 }

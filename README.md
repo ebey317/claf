@@ -88,6 +88,41 @@ The orchestrator injects this at the top of every local turn — before charter,
 
 Defense in depth: even in `hybrid` / `with_convenience`, the orchestrator has an `off_grid_lock` check that 423s any non-local provider when `MODE == off_grid`.
 
+### Permission modes (synced to Claude Code)
+
+CLAF mirrors Claude Code's permission modes so `launch.sh --permission-mode <mode>` matches what Claude Code expects:
+
+| Mode | Auto-approves |
+|---|---|
+| `default` | Reads only |
+| `acceptEdits` | Reads + file edits + common safe filesystem commands |
+| `plan` | Reads only; propose without executing |
+| `auto` | Most actions, with deterministic safety gates (no sudo/install/destructive) |
+| `dontAsk` | Only pre-approved patterns |
+| `bypassPermissions` | Everything; circuit breakers only |
+
+Set/cycle from the terminal:
+
+```bash
+# Check current mode
+python3 ~/projects/claf/toolbox/run_tool.py claf_mode
+
+# Cycle default → acceptEdits → plan → auto
+python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"cycle": true}'
+
+# Set explicitly
+python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"set": "auto"}'
+```
+
+Bind **Shift+Tab** in your terminal to cycle CLAF mode (matches Claude Code's shortcut):
+
+```bash
+# Add to ~/.bashrc
+bind '"\e[Z": "python3 ~/projects/claf/toolbox/run_tool.py claf_mode '"'"'{"cycle": true}'"'"'\n"'
+```
+
+The current mode is persisted in `~/.claf/settings.json` and injected into the system prompt on every turn.
+
 ## Parity
 
 `parity/test_parity.py` is a 5-layer scorecard that measures whether the local model produces cloud-equivalent outcomes — not prose similarity, but:

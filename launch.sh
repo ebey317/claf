@@ -18,8 +18,19 @@ set -euo pipefail
 PROXY_URL="${CLAF_PROXY_URL:-http://localhost:8000}"
 CLAF_DIR="$HOME/projects/claf"
 
-# Parse optional --permission-mode <mode> to sync Claude Code and CLAF.
-PERMISSION_MODE="${CLAF_PERMISSION_MODE:-default}"
+# Sync CLAF permission mode with Claude Code.
+# Priority: --permission-mode flag > CLAF_PERMISSION_MODE env > ~/.claf/settings.json > default
+PERMISSION_MODE="${CLAF_PERMISSION_MODE:-}"
+if [ -z "$PERMISSION_MODE" ] && [ -f "$HOME/.claf/settings.json" ]; then
+    PERMISSION_MODE=$(python3 - "$HOME/.claf/settings.json" 2>/dev/null <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+print(data.get("permissions", {}).get("defaultMode", "default"))
+PY
+) || PERMISSION_MODE="default"
+fi
+PERMISSION_MODE="${PERMISSION_MODE:-default}"
 CLAUDE_MODE_FLAG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in

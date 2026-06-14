@@ -11,13 +11,13 @@ client is driving:
     bypassPermissions — execute freely; circuit breakers only.
 
 Mode is set via CLAF_PERMISSION_MODE env var or ~/.claf/settings.json.
+Shift+Tab cycles: default → acceptEdits → plan → auto → default.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
-import shutil
 from pathlib import Path
 
 _VALID_MODES = {
@@ -40,6 +40,9 @@ _MODE_ALIASES = {
 
 _SETTINGS_FILE = Path.home() / ".claf" / "settings.json"
 
+# Default cycle order (matches Claude Code's Shift+Tab cycle).
+_MODE_CYCLE = ("default", "acceptedits", "plan", "auto")
+
 
 def _load_mode_from_settings() -> str:
     if not _SETTINGS_FILE.exists():
@@ -52,17 +55,40 @@ def _load_mode_from_settings() -> str:
         return ""
 
 
-_raw_mode = (
-    os.environ.get("CLAF_PERMISSION_MODE", "")
-    or _load_mode_from_settings()
-    or "default"
-)
-_raw_mode = (_MODE_ALIASES.get(_raw_mode, _raw_mode)).strip().lower()
-if _raw_mode not in _VALID_MODES:
-    raise ValueError(
-        f"CLAF_PERMISSION_MODE must be one of {sorted(_VALID_MODES)}, got: {_raw_mode!r}"
-    )
-MODE: str = _raw_mode
+def _normalize(raw: str) -> str:
+    mode = (raw or "").strip().lower()
+    return _MODE_ALIASES.get(mode, mode)
+
+
+def current_mode() -> str:
+    """Return the active CLAF permission mode, reading env or settings each call."""
+    raw = os.environ.get("CLAF_PERMISSION_MODE", "") or _load_mode_from_settings() or "default"
+    mode = _normalize(raw)
+    if mode not in _VALID_MODES:
+        raise ValueError(
+            f"CLAF_PERMISSION_MODE must be one of {sorted(_VALID_MODES)}, got: {raw!r}"
+        )
+    return mode
+
+
+class _ModeProxy:
+    """Backward-compatible proxy so code can still reference claf_permissions.MODE."""
+
+    def __str__(self) -> str:
+        return current_mode()
+
+    def __repr__(self) -> str:
+        return current_mode()
+
+    def __eq__(self, other: object) -> bool:
+        return current_mode() == other
+
+    def __hash__(self) -> int:
+        return hash(current_mode())
+
+
+# Backward-compatible alias. Use current_mode() in new code.
+MODE = _ModeProxy()
 
 
 # Bash commands considered safe in acceptEdits mode (matches Claude Code docs).
@@ -91,7 +117,6 @@ def _normalize_command(cmd: str) -> str:
     """Return the base command, stripping common safe prefixes/wrappers."""
     if not cmd:
         return ""
-    # Strip env vars and wrappers like timeout/nice/nohup.
     tokens = cmd.strip().split()
     wrappers = {"timeout", "nice", "nohup", "env", "LANG=C", "NO_COLOR=1"}
     while tokens:
@@ -118,7 +143,11 @@ def is_command_destructive(cmd: str) -> bool:
     base = _normalize_command(cmd)
     if base in _ALWAYS_BLOCKED:
         return True
-    if re.search(r"\b(rm\s+-[rf].*\s+(/|~)|mkfs\.|fdisk|parted|dd\s+if=.*of=/dev/|shutdown|reboot|poweroff)\b", cmd, re.IGNORECASE):
+    if re.search(
+        r"\b(rm\s+-[rf].*\s+(/|~)|mkfs\.|fdisk|parted|dd\s+if=.*of=/dev/|shutdown|reboot|poweroff)\b",
+        cmd,
+        re.IGNORECASE,
+    ):
         return True
     return False
 
@@ -131,48 +160,44 @@ def is_action_allowed(action_type: str, detail: str | None = None) -> str:
     """
     action_type = (action_type or "").strip().lower()
     detail = (detail or "").strip()
+    mode = current_mode()
 
-    # Reads are always allowed (every mode needs exploration).
     if action_type == "read":
         return "allow"
 
-    # Circuit breakers override every mode except explicit bypass.
-    if action_type in ("install", "sudo") and MODE != "bypasspermissions":
+    if action_type in ("install", "sudo") and mode != "bypasspermissions":
         return "deny"
 
     if action_type == "bash" and detail:
         if is_command_destructive(detail):
-            return "deny" if MODE != "bypasspermissions" else "allow"
+            return "allow" if mode == "bypasspermissions" else "deny"
 
-    if MODE == "bypasspermissions":
+    if mode == "bypasspermissions":
         return "allow"
 
-    if MODE == "default":
+    if mode == "default":
         return "ask"
 
-    if MODE == "plan":
+    if mode == "plan":
         return "plan"
 
-    if MODE == "auto":
+    if mode == "auto":
         if action_type in ("edit", "browser", "network", "launch", "task"):
             return "allow"
         if action_type == "bash":
             return "allow"
         return "ask"
 
-    if MODE == "acceptedits":
+    if mode == "acceptedits":
         if action_type == "edit":
             return "allow"
         if action_type == "bash":
             return "allow" if is_command_safe_for_accept_edits(detail) else "ask"
-        if action_type == "launch":
-            return "allow"
-        if action_type == "task":
+        if action_type in ("launch", "task"):
             return "allow"
         return "ask"
 
-    if MODE == "dontask":
-        # Pre-approved: reads, safe edits, safe bash.
+    if mode == "dontask":
         if action_type == "edit":
             return "allow"
         if action_type == "bash":
@@ -184,8 +209,48 @@ def is_action_allowed(action_type: str, detail: str | None = None) -> str:
     return "ask"
 
 
+def _load_settings() -> dict:
+    if not _SETTINGS_FILE.exists():
+        return {}
+    try:
+        return json.loads(_SETTINGS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _save_settings(data: dict) -> None:
+    _SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _SETTINGS_FILE.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def set_mode(mode: str) -> str:
+    """Persist a CLAF permission mode to ~/.claf/settings.json. Returns normalized mode."""
+    mode = _normalize(mode)
+    if mode not in _VALID_MODES:
+        raise ValueError(
+            f"CLAF permission mode must be one of {sorted(_VALID_MODES)}, got: {mode!r}"
+        )
+    data = _load_settings()
+    data.setdefault("permissions", {})
+    data["permissions"]["defaultMode"] = mode
+    _save_settings(data)
+    return mode
+
+
+def cycle_mode() -> str:
+    """Cycle to the next mode in the default Shift+Tab order."""
+    mode = current_mode()
+    if mode in _MODE_CYCLE:
+        idx = _MODE_CYCLE.index(mode)
+        next_mode = _MODE_CYCLE[(idx + 1) % len(_MODE_CYCLE)]
+    else:
+        next_mode = "default"
+    return set_mode(next_mode)
+
+
 def mode_prompt_block() -> str:
     """Return a charter-style block describing the current permission mode."""
+    mode = current_mode()
     rules = {
         "default": (
             "PERMISSION MODE: default (read-only auto-approved). "
@@ -214,11 +279,12 @@ def mode_prompt_block() -> str:
         ),
     }
     return f"""PERMISSION MODE
-{rules.get(MODE, rules['default'])}
-Current mode: {MODE}
+{rules.get(mode, rules['default'])}
+Cycle: Shift+Tab cycles default → acceptEdits → plan → auto.
+Current mode: {mode}
 """
 
 
 if __name__ == "__main__":
-    print(f"mode={MODE}")
+    print(f"mode={current_mode()}")
     print(mode_prompt_block())

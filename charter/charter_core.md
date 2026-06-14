@@ -23,6 +23,9 @@ KNOWN COMMANDS — execute immediately with the exact tool shown
   EXAMPLE: open ollama → Bash: python3 ~/projects/claf/toolbox/run_tool.py open_app '{"app": "ollama"}'
 - run task list | work through backlog | batch mode | engagement loop | process handoff queue → Bash: python3 ~/projects/claf/toolbox/run_tool.py engagement_loop '{}' [NEVER: infinite loops, recursive self-queuing]
   EXAMPLE: run task list → Bash: python3 ~/projects/claf/toolbox/run_tool.py engagement_loop '{}'
+- claf mode | permission mode | shift tab | cycle mode | what mode | set mode → Bash: python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"cycle": "<cycle>"}' [NEVER: silently change mode without reporting it]
+  EXAMPLE: shift tab → Bash: python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"cycle": true}'
+  EXAMPLE: set mode to auto → Bash: python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"set": "auto"}'
 <!-- TOOLBOX MAPPINGS END -->
 
 <!-- PERMISSION_MODE_BLOCK -->
