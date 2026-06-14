@@ -1,0 +1,90 @@
+{
+  "tools": [
+    {
+      "name": "thunderbird_summary",
+      "enabled": true,
+      "category": "email",
+      "requires_approval": false,
+      "requires_credentials": false,
+      "description": "Summarize all cached Thunderbird email accounts using the local scanner.",
+      "commands": [
+        "summarize my email accounts",
+        "Thunderbird summary",
+        "use Thunderbird for email"
+      ]
+    },
+    {
+      "name": "open_website",
+      "enabled": true,
+      "category": "browser",
+      "requires_approval": false,
+      "requires_credentials": false,
+      "description": "Open a website in Chrome via Sensei MCP. Defaults to kimi.com if no URL is given.",
+      "commands": [
+        "go to [url]",
+        "open [url]",
+        "visit [website]",
+        "let's go to [url]",
+        "open tab"
+      ]
+    },
+    {
+      "name": "daddy_dom",
+      "enabled": true,
+      "category": "browser",
+      "requires_approval": false,
+      "requires_credentials": false,
+      "description": "Read the full DOM of a website. If no URL is given, defaults to kimi.com. Returns structured elements.",
+      "commands": [
+        "read the page",
+        "scan this website",
+        "daddy dom",
+        "capture page",
+        "read dom"
+      ]
+    },
+    {
+      "name": "system_check",
+      "enabled": true,
+      "category": "shell",
+      "requires_approval": false,
+      "requires_credentials": false,
+      "description": "Inspect local machine state (USB devices, disks, mounts, processes, failed services). No network access.",
+      "commands": [
+        "check system",
+        "system status",
+        "list usb",
+        "show disks",
+        "check mounts",
+        "what processes",
+        "system_check"
+      ]
+    },
+    {
+      "name": "open_app",
+      "enabled": true,
+      "category": "shell",
+      "requires_approval": false,
+      "requires_credentials": false,
+      "description": "Launch a local desktop application by name. Unknown names are looked up in PATH, so typing \"open ollama\" works like typing `ollama` in a terminal.",
+      "commands": [
+        "open [app]",
+        "launch [app]",
+        "start [app]",
+        "open hypnotix",
+        "open thunderbird",
+        "open writer",
+        "open terminal",
+        "open gnome-terminal",
+        "open files",
+        "open browser",
+        "open chrome",
+        "open firefox",
+        "open vlc",
+        "open calculator",
+        "open settings",
+        "open ollama"
+      ]
+    }
+  ]
+}

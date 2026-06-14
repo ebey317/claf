@@ -21,9 +21,11 @@ In `local` mode the cloud-peer code path doesn't run at all.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 
 
@@ -318,6 +320,70 @@ def _is_action_turn(body: dict) -> bool:
     return False
 
 
+# ----------------------------------------------------------------------------
+# Toolbox-command routing. Minted toolbox tools (registry.json) are
+# deterministic LOCAL scripts — e.g. `thunderbird_summary` reads cached mail on
+# the box. A request that matches a toolbox trigger phrase MUST run local: the
+# cloud can't run the local script, so escalating it only burns a cloud peer and
+# fails on a 429 (observed 2026-06-14: "summarize my email" → cerebras 429 →
+# giveup). This pins such requests to local before any escalation decision.
+# ----------------------------------------------------------------------------
+_TOOLBOX_REGISTRY = Path(__file__).resolve().parent / "toolbox" / "registry.json"
+_toolbox_cmd_cache: dict = {"mtime": None, "variants": []}
+_TOOLBOX_STOPWORDS = {
+    "my", "the", "a", "an", "to", "this", "that", "please", "use", "lets",
+    "for", "of", "on", "in", "go", "it", "me", "your", "all", "and",
+}
+
+
+def _toolbox_variants() -> list[tuple[str, str, set]]:
+    """Load (tool_name, full_phrase, distinctive_tokens) from registry.json,
+    cached by mtime. Returns [] if the registry is missing or has no phrases."""
+    try:
+        mtime = _TOOLBOX_REGISTRY.stat().st_mtime
+    except OSError:
+        return []
+    if _toolbox_cmd_cache["mtime"] == mtime:
+        return _toolbox_cmd_cache["variants"]
+    variants: list[tuple[str, str, set]] = []
+    try:
+        data = json.loads(_TOOLBOX_REGISTRY.read_text(encoding="utf-8"))
+    except Exception:
+        return _toolbox_cmd_cache["variants"]
+    for tool in data.get("tools", []):
+        if not tool.get("enabled", True):
+            continue
+        name = tool.get("name", "")
+        for raw in (tool.get("commands") or []):
+            phrase = re.sub(r"\[[^\]]*\]", " ", raw.lower())  # drop [url]/[website]
+            phrase = " ".join(phrase.split())
+            toks = {w for w in re.findall(r"[a-z]+", phrase)
+                    if w not in _TOOLBOX_STOPWORDS and len(w) > 2}
+            variants.append((name, phrase, toks))
+    _toolbox_cmd_cache["mtime"] = mtime
+    _toolbox_cmd_cache["variants"] = variants
+    return variants
+
+
+def _matches_toolbox_command(body: dict) -> str | None:
+    """Return the tool name if the last user message is a minted-toolbox command.
+
+    Matches on a full trigger phrase appearing as substring, or >=2 distinctive
+    tokens of a variant overlapping the message. Conservative by design — a
+    false positive only pins a request local (no escalation), never the reverse.
+    """
+    text = _last_user_text(body.get("messages") or []).lower()
+    if not text:
+        return None
+    text_tokens = set(re.findall(r"[a-z]+", text))
+    for name, phrase, toks in _toolbox_variants():
+        if len(phrase) >= 6 and phrase in text:
+            return name
+        if len(toks) >= 2 and len(toks & text_tokens) >= 2:
+            return name
+    return None
+
+
 def _is_hard_task(body: dict) -> bool:
     """Should this request escalate above local in hybrid mode?
 
@@ -333,6 +399,9 @@ def _is_hard_task(body: dict) -> bool:
 
     Routine file reads, simple edits, and pattern-matched tasks stay local.
     """
+    # Toolbox-mapped commands are deterministic local tools — never hard.
+    if _matches_toolbox_command(body):
+        return False
     meta = body.get("metadata") or {}
     if meta.get("escalate") is True:
         return True
@@ -518,6 +587,12 @@ def _select_mode(body: dict):
       - hard task (_is_hard_task)  → flash (auto-escalation)
       - anything else              → local (default, fast, free)
     """
+    # Toolbox-mapped commands run the local deterministic tool — pin local
+    # ahead of every escalation trigger (including force_cloud/escalate), since
+    # the cloud cannot run the local script.
+    _tb = _matches_toolbox_command(body)
+    if _tb:
+        return "local", {"reason": "toolbox_command_local", "tool": _tb}
     meta = body.get("metadata") or {}
     if meta.get("force_cloud") is True:
         return "flash", {"reason": "force_cloud_metadata"}
@@ -794,7 +869,9 @@ _BROWSER_SIGNALS = {
 }
 _FILE_SIGNALS = {
     "read", "write", "edit", "file", "grep", "glob", "bash", "run",
-    "code", "script", "directory", "path",
+    "code", "script", "directory", "path", "find", "locate",
+    "search locally", "local search", "locally", "on my computer",
+    "app", "application", "program", "executable",
 }
 _TASK_SIGNALS = {
     "task", "todo", "list", "create task", "update task",
@@ -804,6 +881,7 @@ _EMAIL_SIGNALS = {
     "aol", "gmail", "outlook", "mail", "message", "messages",
     "check mail", "scan mail", "check inbox", "scan inbox",
     "job related", "indeed", "ziprecruiter", "linkedin",
+    "thunderbird",
 }
 
 
@@ -897,6 +975,9 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
     # giving the local model browser tools it then misuses.
     import re as _re
     for _hdr in (
+        # Claude Code injects a <system-reminder> block with CLAUDE.md / memory
+        # sections; it is packed with browser keywords and must be ignored.
+        r'<system-reminder>.*?</system-reminder>',
         r'\[standing orders\][^\[]*',
         r'\[task_seed_required[^\]]*\][^\[]*',
         r'\[session snapshot\][^\[]*',

@@ -237,7 +237,7 @@ def _exec_file_write(path: str, content: str) -> dict:
 _DIRECTIVE_PATTERNS = [
     (re.compile(r"BROWSE\s*:\s*open_url\s*=\s*([^\s]+)", re.IGNORECASE), "browse_open_url", 1),
     (re.compile(r"BROWSE\s*:\s*search\s*=\s*(.+?)(?=\s[A-Z]+:|$)", re.IGNORECASE | re.DOTALL), "browse_search", 1),
-    (re.compile(r"SHELL\s*:\s*(.+?)(?=\s[A-Z]+:|$)", re.IGNORECASE | re.DOTALL), "shell_run", 1),
+    (re.compile(r"SHELL\s*:\s*(.+?)(?=\s[A-Z]+:|\n|$)", re.IGNORECASE | re.DOTALL), "shell_run", 1),
     (re.compile(r"FILE\s*:\s*read\s*=\s*([^\s,]+)", re.IGNORECASE), "file_read", 1),
     (re.compile(r"FILE\s*:\s*write\s*=\s*([^\s,]+)(?:,\s*content\s*=\s*(.+))?(?=\s[A-Z]+:|$)", re.IGNORECASE | re.DOTALL), "file_write", 2),
 ]
