@@ -30,6 +30,8 @@ Env knobs (all optional):
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import hashlib
 import json
 import os
 
@@ -144,7 +146,7 @@ if _KEYS_FILE.exists():
         pass  # if keystore is malformed, fall back to whatever env already has
 
 import sensei_supervisor as supervisor  # ReAct XML tool-call translator (off-grid MCP)
-from task_state import load_task, format_task_for_injection
+from task_state import load_task, save_task, format_task_for_injection, task_belongs_to, TASK_FILE
 from claf_config import (
     MODE, PROVIDERS, describe, select_provider, _is_hard_task, _is_action_turn,
     _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
@@ -163,6 +165,12 @@ except Exception:
 # Serialize cloud Ollama requests — concurrent calls to the SSH-tunneled cloud
 # model cause 500s. One in-flight at a time; others queue and wait.
 _OLLAMA_CLOUD_LOCK = threading.Lock()
+
+# How long Ollama keeps the local model loaded after a request.
+# Default -1 = pinned forever (fastest for multi-turn, but can leave a stuck
+# runner burning CPU on some Ollama/model combos). Set to 0 on Mary to unload
+# immediately after each generation, avoiding the hermes3:3b stuck-runner bug.
+_OLLAMA_KEEP_ALIVE = int(os.environ.get("CLAF_OLLAMA_KEEP_ALIVE", "-1"))
 
 
 PORT = int(os.environ.get("CLAF_PORT", "8000"))
@@ -235,9 +243,62 @@ app.add_middleware(
 
 
 def log(event: str, **fields) -> None:
-    entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "event": event, **fields}
+    entry = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "ts_ms": int(time.time() * 1000),
+        "event": event,
+        **fields,
+    }
     with LOG_FILE.open("a") as f:
         f.write(json.dumps(entry) + "\n")
+
+
+# Per-turn instrumentation for latency analysis (Session 6 C21).
+_claf_turn: contextvars.ContextVar[dict | None] = contextvars.ContextVar("claf_turn", default=None)
+
+
+def _current_turn() -> dict | None:
+    return _claf_turn.get()
+
+
+def _inc_charter_stat_count() -> None:
+    """Count a charter/memory filesystem stat() for per-turn observability."""
+    turn = _current_turn()
+    if turn is not None:
+        turn["charter_stat_count"] = turn.get("charter_stat_count", 0) + 1
+
+
+def _mark(name: str) -> None:
+    """Record a monotonic timestamp (ms since turn start) in the current turn."""
+    turn = _current_turn()
+    if turn is None:
+        return
+    turn["marks"][name] = int((time.monotonic() - turn["t0"]) * 1000)
+
+
+def _record_dispatch(kind: str, provider, start: float, end: float) -> None:
+    """Append a dispatch record to the current turn."""
+    turn = _current_turn()
+    if turn is None:
+        return
+    turn["dispatches"].append({
+        "kind": kind,
+        "provider": getattr(provider, "name", "unknown"),
+        "model": getattr(provider, "model", "unknown"),
+        "start_ms": int((start - turn["t0"]) * 1000),
+        "end_ms": int((end - turn["t0"]) * 1000),
+    })
+
+
+def _conv_fingerprint(msgs: list[dict]) -> str:
+    """Short stable fingerprint of the first user text for inter-turn grouping."""
+    for m in msgs:
+        if m.get("role") == "user":
+            c = m.get("content", "")
+            text = c if isinstance(c, str) else json.dumps(c)
+            import hashlib
+            return hashlib.sha1(text[:256].encode("utf-8")).hexdigest()[:10]
+    return "0000000000"
 
 
 # Operational charter prepended to every CLOUD peer's system prompt. Lives in
@@ -256,20 +317,25 @@ _CHARTER_FALLBACK = (
     "- open tab → mcp__sensei__tab_create; screenshot → mcp__sensei__screenshot;\n"
     "  read page → mcp__sensei__read_full; task list → TaskList.\n\n"
 )
-_charter_cache: dict = {"mtime": None, "text": None}
+_charter_cache: dict = {"mtime": None, "text": None, "checked_at": 0}
 
 
 def _load_cloud_charter() -> str:
     """Return the cloud operational charter, reloading from disk when the file
-    changes. Falls back to the inline charter if the file is missing or empty."""
+    changes. Falls back to the inline charter if the file is missing or empty.
+    A 2-second monotonic TTL prevents repeated stat() calls within a burst."""
     try:
-        st = _CHARTER_FILE.stat()
-        if _charter_cache["mtime"] != st.st_mtime:
-            txt = _CHARTER_FILE.read_text(encoding="utf-8").strip()
-            if txt:
-                _charter_cache["mtime"] = st.st_mtime
-                _charter_cache["text"] = txt + "\n\n"
-        if _charter_cache["text"]:
+        now = time.monotonic()
+        if now - _charter_cache.get("checked_at", 0) >= 2.0:
+            _inc_charter_stat_count()
+            st = _CHARTER_FILE.stat()
+            _charter_cache["checked_at"] = now
+            if _charter_cache.get("mtime") != st.st_mtime:
+                txt = _CHARTER_FILE.read_text(encoding="utf-8").strip()
+                if txt:
+                    _charter_cache["mtime"] = st.st_mtime
+                    _charter_cache["text"] = txt + "\n\n"
+        if _charter_cache.get("text"):
             return _charter_cache["text"]
     except (OSError, UnicodeDecodeError) as exc:
         log("charter_load_failed", error=str(exc), using="inline_fallback")
@@ -285,14 +351,20 @@ _charter_slice_cache: dict[str, dict] = {}
 
 
 def _load_charter_slice(name: str) -> str:
-    """Load one charter slice file with mtime caching. Returns "" on missing."""
+    """Load one charter slice file with mtime + 2s TTL caching. Returns "" on missing."""
     path = _CHARTER_DIR / f"{name}.md"
     try:
-        st = path.stat()
+        now = time.monotonic()
         cached = _charter_slice_cache.get(name, {})
-        if cached.get("mtime") != st.st_mtime:
-            text = path.read_text(encoding="utf-8").strip()
-            _charter_slice_cache[name] = {"mtime": st.st_mtime, "text": text}
+        if now - cached.get("checked_at", 0) >= 2.0:
+            _inc_charter_stat_count()
+            st = path.stat()
+            cached["checked_at"] = now
+            if cached.get("mtime") != st.st_mtime:
+                text = path.read_text(encoding="utf-8").strip()
+                cached["mtime"] = st.st_mtime
+                cached["text"] = text
+            _charter_slice_cache[name] = cached
         return _charter_slice_cache[name]["text"]
     except (OSError, UnicodeDecodeError):
         return ""
@@ -303,7 +375,6 @@ def _load_charter_slices(body: dict) -> str:
     and what signals appear in the last user message.
 
     Always: charter_core
-    + charter_capabilities (tool/capability awareness)
     + charter_browser when sensei tools are in the request
     + charter_tasks when TaskList/Create/Update or task-signal words appear
     + charter_debug when error signals or tool failures are in history
@@ -315,12 +386,6 @@ def _load_charter_slices(body: dict) -> str:
         return _load_cloud_charter()
 
     slices = [core]
-
-    # Capabilities slice: always inject so the model knows what tools it has
-    # (terminal, search, find_doc_link, etc.) and the right workflow for docs/help.
-    cap = _load_charter_slice("charter_capabilities")
-    if cap:
-        slices.append(cap)
 
     # Last user message text for signal scoring
     last_user = ""
@@ -378,20 +443,28 @@ _MEMORY_DIR = Path(os.environ.get(
     "CLAF_MEMORY_DIR",
     str(Path.home() / ".claude/projects/-home-elijah/memory"),
 ))
-_memory_cache: dict = {"sig": None, "text": None}
+_memory_cache: dict = {"sig": None, "text": None, "checked_at": 0}
 
 
 def _load_memory_pack() -> str:
     """Concatenate EVERY memory .md file (full body) into one pack, with a header
     per file so the model can cite which memory a fact came from. Cached by a
     signature of (file, mtime, size) across the dir so any edit refreshes it.
+    A 2-second monotonic TTL skips stat() bursts between rapid turns.
     Returns '' if the dir is missing/empty — never raises into the request path."""
     try:
+        now = time.monotonic()
+        if now - _memory_cache.get("checked_at", 0) < 2.0 and _memory_cache.get("text"):
+            return _memory_cache["text"]
         files = sorted(_MEMORY_DIR.glob("*.md"))
         if not files:
             return ""
         sig = tuple((f.name, f.stat().st_mtime, f.stat().st_size) for f in files)
-        if _memory_cache["sig"] == sig and _memory_cache["text"]:
+        _inc_charter_stat_count()
+        for _ in files:
+            _inc_charter_stat_count()
+        if _memory_cache.get("sig") == sig and _memory_cache.get("text"):
+            _memory_cache["checked_at"] = now
             return _memory_cache["text"]
         parts = [
             "===== FULL MEMORY CORPUS — this is what you KNOW about the operator. "
@@ -408,6 +481,7 @@ def _load_memory_pack() -> str:
         pack = "".join(parts)
         _memory_cache["sig"] = sig
         _memory_cache["text"] = pack
+        _memory_cache["checked_at"] = now
         log("memory_pack_built", files=len(files), chars=len(pack))
         return pack
     except OSError as exc:
@@ -518,7 +592,43 @@ def _anthropic_tools_to_ollama(tools: list[dict]) -> list[dict]:
     return out
 
 
-def messages_from_anthropic(claude_messages: list, flavor: str = "openai") -> list[dict]:
+def _tools_to_ollama_format(tools: list[dict]) -> dict:
+    """Build a JSON schema for Ollama `format` that constrains the model to emit
+    exactly one valid tool call. This is the mechanical enforcement layer for
+    small local models that otherwise hallucinate tool names or arguments.
+
+    Output schema shape:
+        {
+          "name": "<tool_name>",
+          "arguments": { <tool-specific parameters> }
+        }
+    """
+    if not tools:
+        return {"type": "object"}
+
+    one_of = []
+    for t in tools:
+        name = t.get("name", "")
+        schema = t.get("input_schema") or t.get("parameters") or {}
+        # Make sure nested schemas declare themselves objects so Ollama's
+        # JSON-schema validator does not choke on bare parameter lists.
+        if schema.get("type") != "object":
+            schema = {"type": "object", "properties": {}, "required": []}
+        one_of.append({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "enum": [name]},
+                "arguments": schema,
+            },
+            "required": ["name", "arguments"],
+        })
+
+    if len(one_of) == 1:
+        return one_of[0]
+    return {"oneOf": one_of}
+
+
+def messages_from_anthropic(claude_messages: list, flavor: str = "openai"):
     """Convert Anthropic messages to OpenAI- or Ollama-flavored messages,
     PRESERVING tool_use / tool_result structure so multi-turn tool loops work.
 
@@ -716,6 +826,138 @@ def ollama_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     return blocks, bool(tool_calls)
 
 
+def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None = None) -> list[dict]:
+    """Recover tool calls from models that emit tool JSON as text but with
+    syntax errors (e.g. hermes3:3b on CPU). Looks for JSON-like objects with
+    'name' and 'arguments' keys, fixes common quoting mistakes, validates
+    against tool input schemas, and maps the result to Ollama's tool_call
+    format."""
+    import json as _json
+    import ast as _ast
+    if not text or not tools:
+        return []
+    available = {t.get("name"): t for t in tools if t.get("name")}
+    repaired = []
+    saw_known_tool = False
+
+    def _try_json_loads(raw: str):
+        try:
+            return _normalize_keys(_json.loads(raw))
+        except Exception:
+            return None
+
+    def _normalize_keys(obj):
+        """Strip whitespace from JSON object keys (hermes3 emits " name":)."""
+        if isinstance(obj, dict):
+            return {k.strip(): _normalize_keys(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_normalize_keys(v) for v in obj]
+        return obj
+
+    def _fix_json_text(raw: str) -> str:
+        # Strip markdown ```json ... ``` fences.
+        fenced = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw)
+        if fenced:
+            raw = fenced.group(1)
+        # Balanced single-quote -> double-quote swap for dict bodies.
+        # Only swap when the body appears to use single quotes as delimiters.
+        if "'" in raw and raw.count("'") % 2 == 0 and raw.count('"') == 0:
+            raw = raw.replace("'", '"')
+        # Remove trailing commas before } or ].
+        raw = re.sub(r',(\s*[}\]])', r'\1', raw)
+        # Normalize weirdly-spaced quoted keys: " name": -> "name":
+        fixed = re.sub(r'([{,]\s*)"\s*(\w+)\s*"(\s*:)', r'\1"\2"\3', raw)
+        # Fix unquoted keys like {name: ...}.
+        fixed = re.sub(r'([{,]\s*)(\w+)(\s*:)', r'\1"\2"\3', fixed)
+        # Fix "name: ..." where the opening quote before the key is never closed.
+        fixed = re.sub(r'["\'](\w+)(\s*:)', r'"\1":', fixed)
+        # Fix missing closing quote on string values: "foo} -> "foo"}
+        fixed = re.sub(r'(:\s*"[^"]*?)(\s*\})', r'\1"\2', fixed)
+        # Fix single-quoted string values inside double-quoted JSON.
+        fixed = re.sub(r"(:\s*)'([^']*)'", r'\1"\2"', fixed)
+        return fixed
+
+    for match in re.finditer(r'\{(?:[^{}]|\{[^{}]*\})*\}', text, re.DOTALL):
+        cand = match.group(0)
+        data = _try_json_loads(cand)
+        if data is None:
+            data = _try_json_loads(_fix_json_text(cand))
+        if data is None:
+            # Last resort: pull name/arguments out with regex and parse
+            # arguments as a Python dict literal.
+            try:
+                nm = re.search(r'["\']?\s*name\s*["\']?\s*:\s*["\']([^"\']+)["\']', cand)
+                am = re.search(r'["\']?\s*arguments\s*["\']?\s*:\s*(\{.*?\})', cand, re.DOTALL)
+                if nm and am:
+                    name_str = nm.group(1).strip()
+                    args_dict = _normalize_keys(_ast.literal_eval(am.group(1)))
+                    if isinstance(args_dict, dict):
+                        data = {"name": name_str, "arguments": args_dict}
+            except Exception:
+                pass
+        if not isinstance(data, dict):
+            continue
+        name = data.get("name") or data.get("tool")
+        args = data.get("arguments") or data.get("input") or data.get("parameters") or {}
+        if not name or not isinstance(name, str):
+            continue
+        name = name.split()[0].strip('"\'')
+        if name not in available:
+            continue
+        saw_known_tool = True
+        if not isinstance(args, dict):
+            if isinstance(args, str):
+                s = args.strip()
+                if name == "Bash":
+                    args = {"command": s}
+                elif name == "Write":
+                    # Case 1: Python dict literal in the string, e.g.
+                    # "{'content': 'step 1', 'file_path': '/tmp/x/file_1.txt'}"
+                    if s.startswith("{") and s.endswith("}"):
+                        try:
+                            d = _ast.literal_eval(s)
+                            if isinstance(d, dict):
+                                path = d.get("file_path") or d.get("path") or d.get("file")
+                                content = d.get("content") or d.get("text") or d.get("data", "")
+                                if path:
+                                    args = {"file_path": path, "content": str(content)}
+                                else:
+                                    args = {}
+                            else:
+                                args = {}
+                        except Exception:
+                            args = {}
+                    else:
+                        # Case 2: "file_path content" shorthand
+                        parts = s.split(None, 1)
+                        if len(parts) == 2:
+                            content = parts[1].strip("\'") if parts[1].startswith("'") else parts[1]
+                            args = {"file_path": parts[0], "content": content}
+                        else:
+                            args = {"file_path": parts[0], "content": ""} if parts else {}
+                elif name == "Read":
+                    args = {"file_path": s}
+                else:
+                    args = {}
+            else:
+                args = {}
+
+        # Schema validation: reject repaired calls that miss required params.
+        tool_def = available.get(name, {})
+        schema = tool_def.get("input_schema") or tool_def.get("parameters") or {}
+        required = schema.get("required", []) if isinstance(schema, dict) else []
+        missing = [k for k in required if k not in args]
+        if missing:
+            log("tool_call_repair_rejected", tool=name, missing=missing, snippet=text[:160])
+            continue
+
+        repaired.append({"function": {"name": name, "arguments": args}})
+
+    if not repaired and saw_known_tool and model:
+        log("tool_call_repair_failed", model=model, snippet=text[:160])
+    return repaired
+
+
 def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
                 max_tokens: int | None = None) -> tuple[list[dict], dict, bool]:
     """Ollama chat — local AND cloud, unified. Sends native tools when present
@@ -736,13 +978,16 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
         cap = int(os.environ.get("CLAF_LOCAL_MAX_PREDICT", "512"))
         num_predict = min(max_tokens or cap, cap)
 
-    THINKING_MODELS = {"qwen3.5:9b", "qwen3:8b", "qwen3:14b", "qwen3:30b", "qwen3:32b"}
+    THINKING_MODELS = {"qwen3.5:2b", "qwen3.5:9b", "qwen3:8b", "qwen3:14b", "qwen3:30b", "qwen3:32b"}
     # Thinking budget tiers: light=512 medium=1024 heavy=2048 extra=4096 tokens
     THINK_BUDGETS = {"light": 512, "medium": 1024, "heavy": 2048, "extra": 4096}
     think_level = os.environ.get("CLAF_THINK_LEVEL", "medium").strip().lower()
     think_budget = THINK_BUDGETS.get(think_level, 1024)
 
     opts = {"temperature": 0.1, "num_predict": num_predict, "num_ctx": num_ctx}
+    num_thread = int(os.environ.get("CLAF_OLLAMA_NUM_THREADS", "0"))
+    if not is_cloud and num_thread > 0:
+        opts["num_thread"] = num_thread
 
     payload = {
         "model": provider.model,
@@ -750,6 +995,11 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
         "stream": False,
         "options": opts,
     }
+    if not is_cloud:
+        # Keep the local model pinned in RAM. Without this, each request resets
+        # ollama's keep_alive to the 5m default — overriding the prewarm pin —
+        # and any idle gap >5m costs a ~3.6s model reload on the next turn.
+        payload["keep_alive"] = _OLLAMA_KEEP_ALIVE  # default -1; override via CLAF_OLLAMA_KEEP_ALIVE
     if provider.model in THINKING_MODELS:
         if think_level == "none" or bool(tools) or _request_is_simple({"tools": tools, "messages": messages}):
             # thinking disabled, execution mode, or simple chat — thinking off
@@ -760,6 +1010,70 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
             payload["options"]["num_predict"] = think_budget
     if tools:
         payload["tools"] = _anthropic_tools_to_ollama(tools)
+
+    # Mechanical output enforcement: small local models hallucinate tool names and
+    # argument shapes unless the token sampler is masked. Ollama's `format` field
+    # accepts a JSON schema; use it only for local requests when enabled.
+    _constrained = (
+        not is_cloud
+        and tools
+        and os.environ.get("CLAF_LOCAL_CONSTRAINED", "0") == "1"
+    )
+    if _constrained:
+        payload["format"] = _tools_to_ollama_format(tools)
+
+    # Local models (especially qwen/hermes via Ollama) crash or produce malformed
+    # output when asked to emit many parallel tool_calls in one turn. Force
+    # sequential tool use on local so each response contains at most one tool call.
+    # Also add task/scope discipline to prevent status-report drift and overshoot.
+    if not is_cloud and tools:
+        messages = list(messages)
+        extras = [
+            "LOCAL EXECUTION DISCIPLINE: You may only emit ONE tool call per "
+            "response. Wait for the tool result, then decide the next single "
+            "tool call. Never batch multiple tool calls in one turn. "
+            "If the task is complete, do NOT call another tool — respond with final text only.",
+            "SCOPE DISCIPLINE: If the operator asked for a bounded number of "
+            "items (e.g. 'create exactly N files', 'check N emails'), complete "
+            "exactly that many and then stop with a summary. Do not continue "
+            "beyond the requested scope.",
+        ]
+        # Mechanical scope enforcement: when all auto items are done, forbid
+        # further tool calls so the loop terminates cleanly.
+        _task = load_task()
+        if _task and _task.get("auto") and _task_pending_count() == 0:
+            extras.append(
+                "TASK COMPLETE — STOP NOW. All task items are done. "
+                "You MUST respond with a short final text summary. "
+                "Do NOT emit any tool_call, tool_use, JSON, or markdown code block. "
+                "The correct answer is: say 'done' and end your turn."
+            )
+        # Inject the exact next pending item as a user message — local 2B models
+        # attend better to a concrete user instruction than to a system suffix.
+        if _task and _task.get("auto"):
+            _pending_items = [it for it in _task.get("items", [])
+                              if isinstance(it, dict) and it.get("status", "pending") == "pending"]
+            if _pending_items:
+                _next = _pending_items[0]
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "NEXT PENDING ITEM: " + _next.get("task", "")
+                        + ". MANDATORY: emit exactly ONE tool call for this item "
+                        "RIGHT NOW. Do NOT reply with prose, summary, or status. "
+                        "If this item is done, update ~/.claf/current_task.json first, "
+                        "then emit the tool call for the next item in the SAME turn."
+                    ),
+                })
+        if _task_pending_count() > 0:
+            extras.append(
+                "MANDATORY TASK DISCIPLINE: An active task has pending items. "
+                "You MUST continue executing with a single tool call THIS turn. "
+                "Text-only responses are FORBIDDEN while items are pending. "
+                "Do not summarize, do not ask the operator, do not stop."
+            )
+        messages.append({"role": "system", "content": "\n\n".join(extras)})
+        payload["messages"] = messages
 
     # Debug: log actual payload sizes going to Ollama so we can diagnose
     # why prompt_eval_count hits CTX even after trimming.
@@ -777,6 +1091,18 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
     with (lock if lock else contextlib.nullcontext()):
         with httpx.Client(timeout=300.0) as client:
             r = client.post(provider.url, json=payload)
+            # One-time fallback: if Ollama rejects the constrained format schema,
+            # drop it and retry. Some model/template combinations don't support
+            # format + tools together.
+            if _constrained and r.status_code in (400, 422):
+                try:
+                    err_body = r.text
+                except Exception:
+                    err_body = ""
+                if "format" in err_body.lower() or "schema" in err_body.lower() or "json" in err_body.lower():
+                    log("ollama_format_rejected", model=provider.model, error=err_body[:200])
+                    payload.pop("format", None)
+                    r = client.post(provider.url, json=payload)
             r.raise_for_status()
         data = r.json()
 
@@ -784,6 +1110,33 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
     tool_calls = msg.get("tool_calls") or []
     content_text = msg.get("content", "") or ""
     thinking = msg.get("thinking", "") or ""
+
+    # When constrained decoding is active, Ollama may return the tool call as
+    # raw JSON text matching the format schema rather than native tool_calls.
+    # Convert it so the rest of the pipeline sees a normal tool_use block.
+    if _constrained and content_text and not tool_calls:
+        try:
+            parsed = json.loads(content_text.strip())
+            if isinstance(parsed, dict) and "name" in parsed and "arguments" in parsed:
+                tool_calls = [{
+                    "function": {
+                        "name": parsed["name"],
+                        "arguments": parsed["arguments"],
+                    }
+                }]
+                log("tool_call_from_format", name=parsed["name"], model=provider.model)
+        except Exception:
+            pass
+
+    # Hermes/qwen sometimes emit tool calls as malformed JSON text instead of
+    # native tool_calls. Try aggressive repair first, then the cleaner markup.
+    if not tool_calls and content_text and tools:
+        repaired = _repair_malformed_tool_json(content_text, tools, provider.model)
+        if repaired:
+            msg = dict(msg)
+            msg["tool_calls"] = repaired
+            tool_calls = repaired
+            log("tool_call_repaired", count=len(repaired), model=provider.model)
 
     # Thinking-mode fallback: some qwen builds emit tool calls as plain text
     # [Tool call: name({...})] instead of native tool_calls. Recover those.
@@ -1297,6 +1650,7 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
                 "input": _jargs,
             },
         ))
+
     if not found:
         return [{"type": "text", "text": text}], False
 
@@ -1754,6 +2108,290 @@ def _count_replan_epochs(msgs: list) -> int:
     )
 
 
+def _parse_bounded_file_task(text: str) -> list[dict] | None:
+    """Detect 'create/write exactly N files' patterns and expand to explicit items.
+
+    Supports path/content templates with a single 'N' placeholder, e.g.:
+      'create exactly 5 files /tmp/x/file_N.txt containing step N'
+    Returns a list of items with auto_done criteria, or None if no pattern matches.
+    """
+    text_lower = text.lower()
+    m = re.search(r"(?:create|write|make)\s+(?:exactly\s+)?(\d+)\s+(?:numbered\s+)?files?", text_lower)
+    if not m:
+        return None
+    n = int(m.group(1))
+    if n <= 0 or n > 1000:
+        return None
+    # Look for a path template containing N or file_N
+    path_tmpl = None
+    # First try to find an explicit path with _N or {N}
+    pm = re.search(r"(/[\w\-./{}]+[_N](?:\.[\w]+)?)", text)
+    if pm:
+        path_tmpl = pm.group(1)
+    else:
+        # Fallback: any absolute-looking path
+        pm2 = re.search(r"(/[\w\-./]+/)([\w\-{}N_]+\.[\w]+)", text)
+        if pm2:
+            path_tmpl = pm2.group(1) + pm2.group(2)
+    if not path_tmpl:
+        path_tmpl = "/tmp/claf_files/file_N.txt"
+    # Content template: look for quoted 'step N', 'file N', or just 'N'
+    cm = re.search(r"['\"]([^'\"]*N[^'\"]*)['\"]", text)
+    content_tmpl = cm.group(1) if cm else "step N"
+    items = []
+    for i in range(1, n + 1):
+        p = path_tmpl.replace("{N}", str(i)).replace("_N", f"_{i}").replace("N", str(i))
+        c = content_tmpl.replace("{N}", str(i)).replace("N", str(i))
+        items.append({
+            "id": i,
+            "task": f"Write {p} with content {c!r}",
+            "status": "pending",
+            "auto_done": {"tool": "Write", "file_path": p, "content": c},
+        })
+    return items
+
+
+def _enforce_auto_task_scope(content_blocks: list[dict]) -> list[dict]:
+    """Mechanical safety net for bounded auto tasks.
+
+    - If an auto task has pending items and the model emits a Write call that
+      does NOT match the next pending item, rewrite it to the correct
+      path/content so the task advances.
+    - If an auto task has NO pending items, the task is complete: strip any
+      tool_use blocks and force a text-only final response so the model cannot
+      overshoot the requested scope.
+    """
+    task = load_task()
+    if not task or not task.get("auto"):
+        return content_blocks
+    pending = [it for it in task.get("items", [])
+               if isinstance(it, dict) and it.get("status", "pending") == "pending" and it.get("auto_done")]
+    # Task complete — mechanically stop any further tool calls.
+    if not pending:
+        has_tool = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content_blocks)
+        if has_tool:
+            text_blocks = [b for b in content_blocks if isinstance(b, dict) and b.get("type") == "text"]
+            raw_text = " ".join(b.get("text", "") for b in text_blocks).strip()
+            # If the model emitted malformed tool JSON as text, replace it with
+            # a clean completion summary instead of echoing garbage.
+            if raw_text and "{" not in raw_text and len(raw_text) < 200:
+                summary = raw_text
+            else:
+                total = len(task.get("items", []))
+                summary = f"Task complete. {total} item(s) finished. done"
+            log("auto_task_scope_stop", stripped_tools=True, summary=summary[:80])
+            return [{"type": "text", "text": summary}]
+        return content_blocks
+    # Task in progress — enforce the next pending item.
+    next_item = pending[0]
+    ad = next_item.get("auto_done", {})
+    if ad.get("tool") != "Write":
+        return content_blocks
+    exp_path = ad.get("file_path", "")
+    exp_content = ad.get("content", "")
+    changed = False
+    out = []
+    for block in content_blocks:
+        if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "Write":
+            inp = block.get("input", {})
+            actual_path = inp.get("file_path", "")
+            actual_content = inp.get("content", "")
+            if actual_path != exp_path or actual_content != exp_content:
+                block = dict(block)
+                block["input"] = {"file_path": exp_path, "content": exp_content}
+                changed = True
+        out.append(block)
+    if changed:
+        log("auto_task_scope_rewrite", expected_path=exp_path,
+            expected_content=exp_content)
+    return out
+
+
+def _auto_resolve_task_items(body: dict) -> bool:
+    """Scan incoming messages for tool_results that match pending auto_done items.
+
+    This lets the orchestrator track progress for bounded auto-seeded tasks
+    instead of relying on the 3B model to update ~/.claf/current_task.json.
+    Returns True if any item was updated.
+    """
+    task = load_task()
+    if not task:
+        return False
+    items = task.get("items", [])
+    if not any(isinstance(it, dict) and it.get("auto_done") for it in items):
+        return False
+    # Gather Write tool results from message history
+    done_paths = {}  # path -> content
+    for msg in body.get("messages", []) or []:
+        content = msg.get("content", [])
+        if isinstance(content, str):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "tool_result":
+                continue
+            tc_id = block.get("tool_use_id", "")
+            result_text = ""
+            if isinstance(block.get("content"), str):
+                result_text = block["content"]
+            elif isinstance(block.get("content"), list):
+                result_text = "\n".join(
+                    c.get("text", "") for c in block["content"] if isinstance(c, dict)
+                )
+            # Try to extract path from result text like "Wrote N chars to /path"
+            wm = re.search(r"Wrote \d+ chars? to (\S+)", result_text)
+            if not wm:
+                continue
+            path = wm.group(1)
+            # Find the matching tool_use in history to get content
+            content_val = None
+            for m2 in body.get("messages", []) or []:
+                c2 = m2.get("content", [])
+                if isinstance(c2, str):
+                    continue
+                for b2 in c2:
+                    if isinstance(b2, dict) and b2.get("type") == "tool_use" and b2.get("id") == tc_id:
+                        inp = b2.get("input", {})
+                        content_val = inp.get("content")
+                        break
+                if content_val is not None:
+                    break
+            if path and content_val is not None:
+                done_paths[path] = content_val
+    changed = False
+    for it in items:
+        if not isinstance(it, dict) or it.get("status") != "pending":
+            continue
+        ad = it.get("auto_done")
+        if not isinstance(ad, dict):
+            continue
+        if ad.get("tool") != "Write":
+            continue
+        exp_path = ad.get("file_path", "")
+        exp_content = ad.get("content", "")
+        if exp_path in done_paths and done_paths[exp_path] == exp_content:
+            it["status"] = "done"
+            changed = True
+    if changed:
+        save_task(task)
+    return changed
+
+
+def _task_pending_count() -> int:
+    """Ground-truth count of UNRESOLVED items in the active task file
+    (~/.claf/current_task.json). Resolved = done/failed/skip; anything else
+    (incl. 'pending' or a missing/garbled status) counts as still-to-do.
+    Returns 0 when no task file is active — the signal the loop is free to end."""
+    task = load_task()
+    if not task:
+        return 0
+    _resolved = {"done", "failed", "skip"}
+    return sum(
+        1 for it in task.get("items", [])
+        if isinstance(it, dict)
+        and str(it.get("status", "pending")).strip().lower() not in _resolved
+    )
+
+
+def _looks_agentic_task(text: str) -> bool:
+    """Return True if the operator's text looks like a multi-step or agentic
+    workflow that should have a task file. Simple commands and questions should
+    return False so the orchestrator does not manufacture fake pending work.
+    """
+    t = text.lower()
+    # Bounded file creation — proven local automation path.
+    if _parse_bounded_file_task(text):
+        return True
+    # Explicit agentic / task keywords.
+    agentic_signals = (
+        "create a task", "make a task", "do this task", "automate this",
+        "run this workflow", "every day", "every morning", "every night",
+        "on a schedule", "repeat this", "for each of", "for every",
+    )
+    if any(sig in t for sig in agentic_signals):
+        return True
+    # Numbered lists with action verbs look like step-by-step instructions.
+    if re.search(r"\b\d+\.\s+(create|write|run|check|open|send|read|edit|delete|make)\b", t):
+        return True
+    return False
+
+def _auto_seed_task(body: dict, conv_fp: str) -> bool:
+    """Seed ~/.claf/current_task.json from the operator's instruction when an
+    agentic request starts and no task file exists. The 3B local model does not
+    reliably WRITE the file the charter asks for — and the continuation guard
+    can't protect a file that never exists. Seeding from the orchestrator makes
+    the ground truth unconditional. Marked auto:true so the guard can clean it
+    up when the model insists the work is finished (model-written files are
+    never auto-deleted). Returns True if a file was written."""
+    if not body.get("tools"):
+        return False  # not an agentic request
+    msgs = body.get("messages", []) or []
+    if not msgs:
+        return False
+    last = msgs[-1]
+    if last.get("role") != "user":
+        return False
+    c = last.get("content")
+    if isinstance(c, str):
+        text = c
+    elif isinstance(c, list):
+        # A genuine operator turn is text-only; tool_result blocks mean we are
+        # mid-loop and the task (if any) already exists or the model owns it.
+        if any(isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
+            return False
+        text = " ".join(b.get("text", "") for b in c if isinstance(b, dict))
+    else:
+        return False
+    text = text.strip()
+    if len(text) < 20 or "[CLAF-" in text:
+        return False  # too short to be a task, or our own injected marker
+    if not _looks_agentic_task(text):
+        return False  # simple command/question — no fake task
+    existing = load_task()
+    if existing:
+        if not existing.get("auto"):
+            return False  # model-written file — never clobber
+        # If the new request is a bounded file task, reseed whenever the
+        # expected paths/content differ. This prevents a stale auto task from
+        # steering the model toward old files when the operator starts a new
+        # bounded task within the TTL window.
+        _bounded_new = _parse_bounded_file_task(text)
+        if _bounded_new:
+            _existing_items = [it for it in existing.get("items", [])
+                               if isinstance(it, dict) and it.get("auto_done")]
+            if len(_bounded_new) != len(_existing_items):
+                pass  # counts differ → reseed below
+            elif _bounded_new and _existing_items:
+                _new_keys = {(it["auto_done"]["file_path"], it["auto_done"]["content"])
+                             for it in _bounded_new}
+                _old_keys = {(it["auto_done"]["file_path"], it["auto_done"]["content"])
+                             for it in _existing_items}
+                if _new_keys == _old_keys:
+                    return False  # same bounded task still running
+            # otherwise fall through to reseed
+        else:
+            try:
+                import time as _t
+                ttl_min = int(os.environ.get("CLAF_AUTO_TASK_TTL_MIN", "30"))
+                if _t.time() - TASK_FILE.stat().st_mtime < ttl_min * 60:
+                    return False  # fresh auto task — same task still running
+            except OSError:
+                pass  # stat failed → treat as stale, reseed
+    goal = text[:200]
+    bounded_items = _parse_bounded_file_task(text)
+    if bounded_items:
+        save_task({"goal": goal, "auto": True, "conv_fp": conv_fp, "items": bounded_items})
+        log("auto_task_seeded", goal_chars=len(goal), conv_fp=conv_fp,
+            replaced_stale=bool(existing), bounded_items=len(bounded_items))
+        return True
+    save_task({"goal": goal, "auto": True, "conv_fp": conv_fp,
+               "items": [{"id": 1, "task": goal, "status": "pending"}]})
+    log("auto_task_seeded", goal_chars=len(goal), conv_fp=conv_fp,
+        replaced_stale=bool(existing))
+    return True
+
+
 def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict], dict]:
     info = {"trimmed": False}
     if os.environ.get("CLAF_LOCAL_TRIM", "1") == "0":
@@ -1807,6 +2445,38 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
 @app.post("/v1/messages")
 async def messages(request: Request):
     body = await request.json()
+    turn = {
+        "turn_id": uuid.uuid4().hex[:12],
+        "t0": time.monotonic(),
+        "marks": {},
+        "dispatches": [],
+        "redispatch_count": 0,
+    }
+    token = _claf_turn.set(turn)
+    try:
+        response = await _messages_impl(request, body, turn)
+        return response
+    finally:
+        _claf_turn.reset(token)
+        turn["total_ms"] = int((time.monotonic() - turn["t0"]) * 1000)
+        log("turn_summary",
+            turn_id=turn["turn_id"],
+            conv_fp=_conv_fingerprint(body.get("messages", [])),
+            message_count=len(body.get("messages", [])),
+            total_ms=turn["total_ms"],
+            marks=turn["marks"],
+            dispatches=turn["dispatches"],
+            redispatch_count=turn["redispatch_count"],
+            charter_stat_count=turn.get("charter_stat_count", 0),
+            provider=turn.get("provider"),
+            provider_pool=turn.get("provider_pool"),
+            model=turn.get("model"),
+            tool_use=turn.get("tool_use"),
+            stream=body.get("stream", False),
+            status=turn.get("status", "ok"))
+
+
+async def _messages_impl(request: Request, body: dict, turn: dict):
     _sys_probe = flatten_system(body.get("system"))
     _msgs_probe = body.get("messages", [])
     _last_user = ""
@@ -1815,8 +2485,22 @@ async def messages(request: Request):
             _c = _m.get("content")
             _last_user = _c if isinstance(_c, str) else json.dumps(_c)
             break
+    _mark("t_request_in")
+    # Strip hook-injected blocks from prompt before snapshotting so the snippet
+    # shows the actual operator intent, not the prepended STANDING ORDERS wall.
+    import re as _re_req
+    _prompt_clean = _last_user if isinstance(_last_user, str) else json.dumps(_last_user)
+    for _hdr in (
+        r'\[standing orders\][^\[]*', r'\[task_seed_required[^\]]*\][^\[]*',
+        r'\[session snapshot\][^\[]*', r'\[heartbeat[^\]]*\][^\[]*',
+        r'\[non-negotiables\][^\[]*', r'\[topology\][^\[]*',
+        r'\[retry_schema[^\]]*\][^\[]*', r'\[open tasks[^\]]*\][^\[]*',
+    ):
+        _prompt_clean = _re_req.sub(_hdr, ' ', _prompt_clean, flags=_re_req.DOTALL)
+    _prompt_clean = ' '.join(_prompt_clean.split())
     log(
         "request_in",
+        turn_id=turn["turn_id"],
         model=body.get("model"),
         message_count=len(_msgs_probe),
         has_system=bool(body.get("system")),
@@ -1826,7 +2510,15 @@ async def messages(request: Request):
         sys_has_claude_md=("STANDING ORDERS" in _sys_probe or "STARTUP ROUTINE" in _sys_probe),
         sys_has_memory=("MEMORY.md" in _sys_probe or "auto-memory" in _sys_probe or "feedback_" in _sys_probe),
         prompt_has_retry_hook=("RETRY_SCHEMA" in _last_user),
+        prompt_snippet=_prompt_clean[:200],
     )
+
+    # Auto-seed the task file at the start of an agentic task. The continuation
+    # guard reads this as ground truth; without it, a local model that never
+    # writes the file leaves the guard blind (observed live 2026-06-12 01:34).
+    _conv_fp = _conv_fingerprint(body.get("messages", []))
+    _auto_seed_task(body, _conv_fp)
+    _auto_resolve_task_items(body)
 
     system_text = flatten_system(body.get("system"))
     messages = anthropic_to_ollama_messages(body.get("messages", []))
@@ -2033,8 +2725,13 @@ async def messages(request: Request):
             local_attempted = True
             cloud_escalated = False
 
+    _mark("t_route")
+    turn["provider"] = provider.name
+    turn["provider_pool"] = provider.pool
+    turn["model"] = provider.model
     log(
         "route_decision",
+        turn_id=turn["turn_id"],
         mode=MODE,
         provider=provider.name,
         pool=provider.pool,
@@ -2081,22 +2778,29 @@ async def messages(request: Request):
         and read native tool_calls back as Anthropic tool_use blocks. The
         directive-scraper is kept only as a fallback for models that emit prose
         tool calls instead of native ones."""
+        _mark("t_prompt_ready")
         _tools = body.get("tools")
         if p.kind == "ollama":
             _msgs = messages_from_anthropic(body.get("messages", []), flavor="ollama")
             _sys = system_text
             _tools_eff = _tools
             if p.pool == "local":
-                # Inject active task state first — survives head-preserving trim.
-                # Model reads this at turn start and knows exactly where the task is.
-                _task = load_task()
-                _task_block = format_task_for_injection(_task) if _task else ""
                 # Prepend surgical charter slices (core + request-relevant).
                 # Cuts injection from 6237 → ~2600-3200 chars, freeing context
                 # for CLAUDE.md identity content after trim.
                 _charter_local = _load_charter_slices(body)
-                _sys = (_task_block + "\n\n" if _task_block else "") + _charter_local + "\n\n" + (_sys or "")
+                _sys = _charter_local + "\n\n" + (_sys or "")
                 _sys, _msgs, _trim_info = _trim_for_local(_sys, _msgs)
+                # Append active task state AFTER the trim, at the END of system
+                # text. Two reasons: (a) appended post-trim it can never be cut,
+                # (b) keeping the DYNAMIC block last preserves ollama's KV prefix
+                # cache — the static charter+sys head stays byte-identical across
+                # turns, so ~1500 tokens skip prompt re-eval (~60s/turn on Mary's
+                # CPU at 25 tok/s). Task-block-first was costing the whole cache.
+                _task = load_task()
+                _task_block = format_task_for_injection(_task) if _task else ""
+                if _task_block:
+                    _sys = (_sys or "") + "\n\n" + _task_block
                 if _trim_info.get("trimmed"):
                     log("local_prompt_trimmed", **_trim_info)
                 # Select the right tool group for this request. Sending all 32+
@@ -2283,7 +2987,17 @@ async def messages(request: Request):
                 # connection) hangs until it finishes, surfacing as ConnectionRefused.
                 # asyncio.to_thread keeps the loop responsive; Ollama still serializes
                 # inference, but the proxy no longer goes dark while it works.
+                _d_start = time.monotonic()
                 content_blocks, usage, used_react, assistant_text, tool_use = await asyncio.to_thread(_dispatch_provider, provider)
+                _dispatch_kind = "fallback" if _rate_limit_failed else "primary"
+                _record_dispatch(_dispatch_kind, provider, _d_start, time.monotonic())
+                # Mechanical scope enforcement: for bounded auto tasks, ensure
+                # the emitted tool call matches the next pending item. Weak local
+                # models often emit the wrong file or malformed arguments.
+                content_blocks = _enforce_auto_task_scope(content_blocks)
+                tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content_blocks)
+                assistant_text = "".join(b.get("text", "") for b in content_blocks
+                                         if isinstance(b, dict) and b.get("type") == "text")
                 break  # success
             except Exception as _call_exc:
                 # Any CLOUD peer failure (429 rate-limit, 413 payload-too-large,
@@ -2299,6 +3013,10 @@ async def messages(request: Request):
                     failed_tier=provider.tier, status=_status,
                     failed_so_far=sorted(_rate_limit_failed))
                 provider = next_cloud_peer(_rate_limit_failed, max_tier=_max_fallback_tier)
+                if provider is not None:
+                    turn["provider"] = provider.name
+                    turn["provider_pool"] = provider.pool
+                    turn["model"] = provider.model
                 if provider is None:
                     # No more cloud peers within the allowed tier budget. In
                     # hybrid/local mode, degrade to LOCAL Ollama — it never
@@ -2335,6 +3053,9 @@ async def messages(request: Request):
                                 return StreamingResponse(_sse_events(_rl_resp), media_type="text/event-stream")
                             return _rl_resp
                         provider = _local
+                        turn["provider"] = provider.name
+                        turn["provider_pool"] = provider.pool
+                        turn["model"] = provider.model
                         if trickle_reservation:
                             throttle.refund(trickle_reservation)
                             trickle_reservation = None
@@ -2370,10 +3091,12 @@ async def messages(request: Request):
     # Detect local context overflow: 8192-token window fully consumed by input,
     # model generated 1 token or nothing. Surface an explicit message instead of
     # silently returning an empty response that makes Claude Code stop with no output.
+    _local_overflow = False
     if (provider.pool == "local"
             and usage.get("output_tokens", 0) <= 1
             and not assistant_text
             and not tool_use):
+        _local_overflow = True
         _overflow_msg = (
             f"[CLAF: local model context overflow — "
             f"input consumed {usage.get('input_tokens', '?')} of 8192 tokens, "
@@ -2386,6 +3109,81 @@ async def messages(request: Request):
             provider=provider.name)
         assistant_text = _overflow_msg
         content_blocks = [{"type": "text", "text": _overflow_msg}]
+
+    # Task-continuation guard — GROUND-TRUTH backstop, runs BEFORE the giveup
+    # interceptor so the cheap local retry gets first crack (the giveup path
+    # force-escalates to a paid cloud peer; this one stays on the SAME provider).
+    #
+    # Signal: the active task file (~/.claf/current_task.json) still lists
+    # UNRESOLVED items, yet the model returned text only. That means it narrated
+    # progress and stopped mid-task — Claude Code would end the loop with work
+    # still pending, and the operator (voice-only, may have walked away) never
+    # sees it finish. Re-invoke ONCE on the same provider with a hard nudge to
+    # emit the next tool call. One-shot via _claf_task_pushed; if this still
+    # returns text-only, the giveup interceptor below escalates to cloud. Cost
+    # ladder: cheap local retry → paid cloud only when local is truly stuck.
+    if (not tool_use
+            and body.get("tools")
+            and not _local_overflow
+            and not body.get("_claf_task_pushed")):
+        _task = load_task()
+        _pending = _task_pending_count() if _task else 0
+        if _pending > 0:
+            if not task_belongs_to(_task, _conv_fp):
+                # Stale task from another conversation — do not tax this turn.
+                if _task and _task.get("auto"):
+                    try:
+                        TASK_FILE.unlink(missing_ok=True)
+                        log("stale_auto_task_cleared_skipping_redispatch",
+                            task_conv_fp=_task.get("conv_fp"), current_conv_fp=_conv_fp)
+                    except OSError as _clr_exc:
+                        log("stale_auto_task_clear_failed", error=str(_clr_exc))
+                else:
+                    log("stale_model_task_skipping_redispatch",
+                        task_conv_fp=_task.get("conv_fp"), current_conv_fp=_conv_fp)
+            else:
+                log("task_continuation_forcing_redispatch",
+                    provider=provider.name, pending_items=_pending,
+                    snippet=(assistant_text or "")[:120])
+                _continue_msg = {
+                    "role": "user",
+                    "content": [{"type": "text", "text": (
+                        f"[CLAF-TASK-CONTINUE] Your active task file still has {_pending} "
+                        "unresolved item(s) — you are MID-TASK, not done. Do NOT reply with "
+                        "prose, do NOT summarize, do NOT stop. Emit your NEXT tool call now "
+                        "to advance the next pending item. If an item just finished, first "
+                        "update ~/.claf/current_task.json (set its status to \"done\"), then "
+                        "call the tool for the next item this same turn."
+                    )}],
+                }
+                body["messages"] = list(body.get("messages", [])) + [_continue_msg]
+                body["_claf_task_pushed"] = True
+                # Local-first: let the same provider finish its task. Cloud is the
+                # giveup/replan fallback below, not the continuation path.
+                try:
+                    _tc_start = time.monotonic()
+                    content_blocks, usage, used_react, assistant_text, tool_use = \
+                        await asyncio.to_thread(_dispatch_provider, provider)
+                    _record_dispatch("task_continue", provider, _tc_start, time.monotonic())
+                    turn["redispatch_count"] = turn.get("redispatch_count", 0) + 1
+                    log("task_continuation_redispatch_done", provider=provider.name,
+                        tool_use=tool_use, out_chars=len(assistant_text or ""))
+                except Exception as _continue_exc:
+                    log("task_continuation_redispatch_failed", provider=provider.name,
+                        error=str(_continue_exc))
+                # If the model STILL replied text-only and the task file was seeded
+                # by us (auto:true), the model is saying the work is done — clear
+                # the auto file so it can't linger and tax every later turn with an
+                # extra dispatch. Model-WRITTEN files are never auto-deleted; the
+                # model owns that lifecycle (charter: delete on completion).
+                if not tool_use:
+                    _t_after = load_task()
+                    if _t_after and _t_after.get("auto"):
+                        try:
+                            TASK_FILE.unlink(missing_ok=True)
+                            log("auto_task_cleared_after_redispatch")
+                        except OSError as _clr_exc:
+                            log("auto_task_clear_failed", error=str(_clr_exc))
 
     # Giveup interceptor (system-level backstop to the charter REPLAN rule).
     # When a response is text-only (no tool call) AND contains giveup language
@@ -2431,12 +3229,32 @@ async def messages(request: Request):
                         "failed, try mcp__sensei__js_eval. Act with a tool now."
                     )}],
                 }
-                body["messages"] = list(body.get("messages", [])) + [_replan_msg]
+                # Cerebras rejects empty assistant content blocks (assistant
+                # messages with content=[] or content=[{type:text,text:""}]).
+                # Prune them before appending the replan nudge.
+                _clean_msgs = []
+                for _m in list(body.get("messages", [])):
+                    if _m.get("role") == "assistant":
+                        _c = _m.get("content", [])
+                        if isinstance(_c, list) and all(
+                            isinstance(_b, dict) and not _b.get("text", "").strip()
+                            and _b.get("type") == "text"
+                            for _b in _c
+                        ) and _c:
+                            continue  # skip empty assistant turns
+                    _clean_msgs.append(_m)
+                body["messages"] = _clean_msgs + [_replan_msg]
                 body["_claf_replanned"] = True
                 try:
+                    _rp_start = time.monotonic()
                     content_blocks, usage, used_react, assistant_text, tool_use = \
                         await asyncio.to_thread(_dispatch_provider, _replan_provider)
+                    _record_dispatch("replan", _replan_provider, _rp_start, time.monotonic())
+                    turn["redispatch_count"] = turn.get("redispatch_count", 0) + 1
                     provider = _replan_provider
+                    turn["provider"] = provider.name
+                    turn["provider_pool"] = provider.pool
+                    turn["model"] = provider.model
                     log("replan_redispatch_done", provider=_replan_provider.name,
                         tool_use=tool_use, out_chars=len(assistant_text or ""))
                 except Exception as _replan_exc:
@@ -2465,8 +3283,12 @@ async def messages(request: Request):
             content_blocks.append({"type": "text", "text": trickle_degrade_note})
 
     response = wrap_anthropic_response(requested_model, content_blocks, usage, tool_use)
+    _mark("t_response_out")
+    turn["tool_use"] = tool_use
+    turn["status"] = turn.get("status", "ok")
     log(
         "response_out",
+        turn_id=turn["turn_id"],
         tier=getattr(provider, 'tier', None),
         name=getattr(provider, 'name', 'unknown'),
         out_chars=len(assistant_text),
@@ -2505,10 +3327,10 @@ if __name__ == "__main__":
                 with httpx.Client(timeout=180.0) as c:
                     c.post(f"{base}/api/generate", json={
                         "model": LOCAL_MODEL, "prompt": "hi", "stream": False,
-                        "keep_alive": -1,
+                        "keep_alive": _OLLAMA_KEEP_ALIVE,
                         "options": {"num_ctx": ctx},
                     })
-                print(f"[prewarm] {LOCAL_MODEL} loaded and pinned in memory (keep_alive=-1)")
+                print(f"[prewarm] {LOCAL_MODEL} loaded (keep_alive={_OLLAMA_KEEP_ALIVE})")
             except Exception as e:
                 print(f"[prewarm] warning: {e}")
         threading.Thread(target=_prewarm, daemon=True).start()
