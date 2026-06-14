@@ -9,6 +9,13 @@ import json
 import shutil
 import subprocess
 import sys
+from pathlib import Path
+
+# Make claf_permissions importable from the toolbox/ subdirectory.
+_CLAF_DIR = Path(__file__).resolve().parent.parent
+if str(_CLAF_DIR) not in sys.path:
+    sys.path.insert(0, str(_CLAF_DIR))
+import claf_permissions
 
 _APP_MAP = {
     # Media / entertainment
@@ -94,6 +101,15 @@ def run(args: dict | None = None) -> str:
         return "[tool error] No app name provided."
     if app in _BLOCKLIST:
         return f"[tool error] Refusing to launch blocked command: {app}"
+
+    # Permission mode gate
+    verdict = claf_permissions.is_action_allowed("launch", app)
+    if verdict == "plan":
+        return f"[plan] Would launch: {app}"
+    if verdict == "ask":
+        return f"[ask] Approve launching {app}?"
+    if verdict == "deny":
+        return f"[tool error] Permission mode ({claf_permissions.MODE}) denies launching {app}"
 
     cmd = _APP_MAP.get(app)
     if cmd is None:

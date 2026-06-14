@@ -18,6 +18,24 @@ set -euo pipefail
 PROXY_URL="${CLAF_PROXY_URL:-http://localhost:8000}"
 CLAF_DIR="$HOME/projects/claf"
 
+# Parse optional --permission-mode <mode> to sync Claude Code and CLAF.
+PERMISSION_MODE="${CLAF_PERMISSION_MODE:-default}"
+CLAUDE_MODE_FLAG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --permission-mode)
+      PERMISSION_MODE="${2:-default}"
+      CLAUDE_MODE_FLAG="--permission-mode $PERMISSION_MODE"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+export CLAF_PERMISSION_MODE="$PERMISSION_MODE"
+
 # FRESH RESTART EVERY TIME. madam = one command that brings the WHOLE hybrid
 # stack online from a clean slate. A reused orchestrator serves STALE CODE — any
 # fix to orchestrator.py / claf_config.py silently doesn't take until the proxy
@@ -80,7 +98,8 @@ export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-sk-claf-local-dummy}"
 unset ANTHROPIC_API_KEY
 
 echo "ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"
-echo "Launching: claude --chrome"
+echo "CLAF_PERMISSION_MODE=$CLAF_PERMISSION_MODE"
+echo "Launching: claude --chrome $CLAUDE_MODE_FLAG"
 echo "(Ctrl+C to exit. Real Anthropic is one fresh terminal away.)"
 echo
 
@@ -92,4 +111,5 @@ echo
 # Always launch from $HOME so Claude Code reads ~/CLAUDE.md (operator identity +
 # startup routine) instead of the CLAF project CLAUDE.md (developer notes).
 cd "$HOME"
-exec claude --chrome
+# shellcheck disable=SC2086
+exec claude --chrome $CLAUDE_MODE_FLAG

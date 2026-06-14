@@ -22,6 +22,12 @@ ENGAGEMENT_LOG = Path.home() / ".claf" / "engagement.log"
 CLAF_URL = os.environ.get("CLAF_URL", "http://localhost:8000/v1/messages")
 MAX_TURNS = int(os.environ.get("CLAF_ENGAGEMENT_MAX_TURNS", "20"))
 
+# Make claf_permissions importable from the toolbox/ subdirectory.
+_CLAF_DIR = Path(__file__).resolve().parent.parent
+if str(_CLAF_DIR) not in sys.path:
+    sys.path.insert(0, str(_CLAF_DIR))
+import claf_permissions
+
 # Steps that should pause for operator confirmation before running.
 _RISKY_PREFIXES = (
     "rm ", "sudo ", "mkfs", "fdisk", "dd ", "git push", "git reset",
@@ -186,17 +192,58 @@ def _call_claf(prompt: str, model: str = "qwen2.5-coder:3b") -> str:
 
 
 def _execute_step(step: str, task_name: str) -> dict:
-    """Execute one step. Returns result dict."""
+    """Execute one step, respecting CLAF permission mode. Returns result dict."""
     cmd = _extract_command(step)
-    if _is_risky(cmd):
+
+    # Permission mode gate: bash steps
+    if _looks_like_shell(cmd):
+        verdict = claf_permissions.is_action_allowed("bash", cmd)
+        if verdict == "deny":
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": f"Permission mode ({claf_permissions.MODE}) denies: {cmd}",
+            }
+        if verdict == "plan":
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": f"Permission mode is plan; would run: {cmd}",
+            }
+        if verdict == "ask":
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": f"Risky step requires operator approval: {cmd}",
+            }
+        if _is_risky(cmd):
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": f"Risky step requires operator approval: {cmd}",
+            }
+        return _run_shell(cmd)
+
+    # Permission mode gate: non-shell steps (app launches, browser, etc.)
+    verdict = claf_permissions.is_action_allowed("task", step)
+    if verdict == "deny":
         return {
             "success": False,
             "blocked": True,
-            "reason": f"Risky step requires operator approval: {cmd}",
+            "reason": f"Permission mode ({claf_permissions.MODE}) denies step: {step}",
         }
-
-    if _looks_like_shell(cmd):
-        return _run_shell(cmd)
+    if verdict == "plan":
+        return {
+            "success": False,
+            "blocked": True,
+            "reason": f"Permission mode is plan; would do: {step}",
+        }
+    if verdict == "ask":
+        return {
+            "success": False,
+            "blocked": True,
+            "reason": f"Step requires operator approval: {step}",
+        }
 
     # Otherwise ask CLAF to interpret the step
     prompt = (

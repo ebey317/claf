@@ -153,6 +153,7 @@ from claf_config import (
     _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
     next_cloud_peer, pick_cloud_peer, select_local_tools, _EMAIL_SIGNALS,
 )
+import claf_permissions
 import claf_throttle as throttle
 import contextlib
 import threading
@@ -517,7 +518,12 @@ def _load_charter_slices(body: dict) -> str:
     if local_max_tools == 0:
         core = re.sub(r"KNOWN COMMANDS[^\n]*\n(?:-[^\n]*\n)+", "", core)
 
-    slices = [core]
+    mode_block = claf_permissions.mode_prompt_block()
+    if "<!-- PERMISSION_MODE_BLOCK -->" in core:
+        core = core.replace("<!-- PERMISSION_MODE_BLOCK -->", mode_block, 1)
+        slices = [core]
+    else:
+        slices = [core, mode_block]
 
     # Last user message text for signal scoring
     last_user = ""
