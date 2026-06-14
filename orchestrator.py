@@ -732,7 +732,7 @@ def messages_from_anthropic(claude_messages: list, flavor: str = "openai"):
     return out
 
 
-def openai_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
+def openai_tool_calls_to_anthropic(message: dict, available_tools: list[dict] | None = None) -> tuple[list[dict], bool]:
     """OpenAI choices[0].message → Anthropic content blocks.
     OpenAI returns tool-call arguments as a JSON STRING. Returns
     (content_blocks, tool_use_bool)."""
@@ -752,7 +752,10 @@ def openai_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
     # Recovery: <function=ToolName>{"args"}</function> XML-tag format.
     # gpt-oss-120b (Cerebras) and some Qwen-based models embed tool calls as
     # XML tags in the content string instead of the native tool_calls field.
-    if not tool_calls and text:
+    # ONLY run recovery when tools were actually sent to the provider; otherwise
+    # text-only fallbacks (Groq) hallucinate tool-call prose that gets parsed
+    # into dozens of bogus tool_use blocks.
+    if available_tools and not tool_calls and text:
         _fn_re = re.compile(
             r"<function=([A-Za-z_][A-Za-z0-9_.:-]*)>\s*(.*?)\s*</function>",
             re.DOTALL,
@@ -1140,7 +1143,8 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
 
     # Thinking-mode fallback: some qwen builds emit tool calls as plain text
     # [Tool call: name({...})] instead of native tool_calls. Recover those.
-    if not tool_calls and content_text:
+    # Only run when tools were actually sent, otherwise prose gets mis-parsed.
+    if not tool_calls and content_text and tools:
         _tc_pat = re.compile(r'\[Tool [Cc]all:\s*(\w+)\((\{.*?\})\)\]', re.DOTALL)
         recovered = []
         for m2 in _tc_pat.finditer(content_text):
@@ -1201,7 +1205,7 @@ def openai_compat_chat(provider, messages: list[dict], tools: list[dict] | None 
         r.raise_for_status()
         data = r.json()
     message = data["choices"][0]["message"]
-    blocks, tool_use = openai_tool_calls_to_anthropic(message)
+    blocks, tool_use = openai_tool_calls_to_anthropic(message, available_tools=tools)
     usage = {
         "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
         "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
