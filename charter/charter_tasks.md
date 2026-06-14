@@ -20,3 +20,6 @@ For anything beyond a single file edit, add strategy, success_criteria, and fall
 MEMORY — writing to persistent memory
 Memory files live at ~/.claude/projects/-home-elijah/memory/. Use Write or Edit tool to create/update .md files there.
 MEMORY.md at that path is the index — add a one-line pointer for every new memory file.
+
+LONG-RUNNING TASK CHECKPOINTS
+When a queued task has more than `CLAF_CHECKPOINT_EVERY` steps (default 5), the engagement loop pauses after every Nth completed step, writes a machine-readable checkpoint to `~/.claf/engagement_checkpoint.json`, appends a human-readable summary to `~/MD/notepad.md`, and marks the HANDOFF task `⏸️`. The operator must re-run the engagement loop to continue. This prevents model drift on long chains and keeps Mary coherent.
