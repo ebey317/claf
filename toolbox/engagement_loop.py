@@ -260,14 +260,18 @@ def _execute_step(step: str, task_name: str) -> dict:
 
 
 def _mark_task(text: str, start: int, end: int, status: str, result: str) -> str:
-    """Replace ⏳/🔄 with ✅ or ⛔ and append engagement summary."""
+    """Replace ⏳/🔄 with ✅, ⛔, or ⏸️ and append engagement summary."""
     block = text[start:end]
+    today = datetime.now().strftime("%Y-%m-%d")
     if status == "done":
         new_heading = block.replace("### ⏳", "### ✅", 1).replace("### 🔄", "### ✅", 1)
-        summary = f"\n**Engagement result (DONE {datetime.now().strftime('%Y-%m-%d')}):** {result}\n"
+        summary = f"\n**Engagement result (DONE {today}):** {result}\n"
+    elif status == "paused":
+        new_heading = block.replace("### ⏳", "### ⏸️", 1).replace("### 🔄", "### ⏸️", 1)
+        summary = f"\n**Engagement result (PAUSED {today}):** {result}\n"
     else:
         new_heading = block.replace("### ⏳", "### ⛔ BLOCKED", 1).replace("### 🔄", "### ⛔ BLOCKED", 1)
-        summary = f"\n**Engagement result (BLOCKED {datetime.now().strftime('%Y-%m-%d')}):** {result}\n"
+        summary = f"\n**Engagement result (BLOCKED {today}):** {result}\n"
     new_block = new_heading.rstrip() + summary
     return text[:start] + new_block + text[end:]
 
