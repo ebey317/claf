@@ -359,7 +359,12 @@ def _clear_checkpoint() -> None:
 
 def run_once(dry_run: bool = False) -> str:
     text = _read_handoff()
-    found = _find_first_task(text)
+    # Prefer resuming a paused checkpoint task.
+    found = _find_first_task(text, status="⏸️")
+    resuming = bool(found)
+    checkpoint = _load_checkpoint() if resuming else None
+    if not found:
+        found = _find_first_task(text)
     if not found:
         _log("no_tasks")
         return "no_tasks"
@@ -373,18 +378,25 @@ def run_once(dry_run: bool = False) -> str:
         _log("skip_non_kimi", owner=owner, name=name)
         return f"skip_non_kimi:{owner}"
 
-    _log("task_claimed", owner=owner, name=name)
+    steps = task.get("steps") or [task.get("goal", name)]
+    start_index = 0
+    if resuming and checkpoint and checkpoint.get("task_name") == name:
+        start_index = min(checkpoint.get("completed_steps", 0), len(steps))
+        _log("task_resumed", owner=owner, name=name, from_step=start_index + 1)
+
+    _log("task_claimed" if not resuming else "task_resumed", owner=owner, name=name)
     if not dry_run:
-        # Claim by rewriting to 🔄
-        claimed_block = task["block"].replace("### ⏳", "### 🔄", 1)
+        if resuming:
+            claimed_block = task["block"].replace("### ⏸️", "### 🔄", 1)
+        else:
+            claimed_block = task["block"].replace("### ⏳", "### 🔄", 1)
         text = text[:start] + claimed_block + text[end:]
         _write_handoff(text)
 
-    steps = task.get("steps") or [task.get("goal", name)]
     qa: list[tuple[str, str]] = []
     results: list[str] = []
 
-    for turn, step in enumerate(steps[:MAX_TURNS], start=1):
+    for turn, step in enumerate(steps[start_index:MAX_TURNS], start=start_index + 1):
         q = f"Step {turn}: {step}"
         _log("step_start", task=name, step=step, turn=turn)
         res = _execute_step(step, name)
@@ -397,10 +409,13 @@ def run_once(dry_run: bool = False) -> str:
                 text = _read_handoff()
                 found2 = _find_first_task(text, status="🔄")
                 if not found2:
+                    found2 = _find_first_task(text, status="⏸️")
+                if not found2:
                     found2 = _find_first_task(text, status="⏳")
                 if found2 and found2[2]["name"] == name:
                     text = _mark_task(text, found2[0], found2[1], "blocked", reason)
                     _write_handoff(text)
+                _clear_checkpoint()
             return f"blocked:{reason}"
 
         if res.get("success"):
@@ -413,6 +428,19 @@ def run_once(dry_run: bool = False) -> str:
         results.append(f"Step {turn}: {answer[:200]}")
         _log("step_done", task=name, turn=turn, success=res.get("success", False))
 
+        completed_count = turn
+        if _checkpoint_needed(completed_count, CHECKPOINT_EVERY) and completed_count < len(steps):
+            summary = f"{completed_count}/{len(steps)} steps completed; paused for human checkpoint"
+            if not dry_run:
+                text = _read_handoff()
+                found2 = _find_first_task(text, status="🔄")
+                if found2 and found2[2]["name"] == name:
+                    text = _mark_task(text, found2[0], found2[1], "paused", summary)
+                    _write_handoff(text)
+                remaining = steps[turn:]
+                _write_checkpoint(name, completed_count, len(steps), qa, remaining)
+            return f"paused:{name}:{completed_count}/{len(steps)}"
+
     summary = " | ".join(results) or "completed"
     _add_engagement_qa(name, qa)
 
@@ -420,10 +448,11 @@ def run_once(dry_run: bool = False) -> str:
         text = _read_handoff()
         found2 = _find_first_task(text, status="🔄")
         if not found2:
-            found2 = _find_first_task(text, status="⏳")
+            found2 = _find_first_task(text, status="⏸️")
         if found2 and found2[2]["name"] == name:
             text = _mark_task(text, found2[0], found2[1], "done", summary)
             _write_handoff(text)
+        _clear_checkpoint()
 
     _log("task_done", owner=owner, name=name, summary=summary[:500])
     return f"done:{name}"
