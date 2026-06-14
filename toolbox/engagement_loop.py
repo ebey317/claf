@@ -19,8 +19,11 @@ from pathlib import Path
 
 HANDOFF = Path.home() / "MD" / "HANDOFF.md"
 ENGAGEMENT_LOG = Path.home() / ".claf" / "engagement.log"
+CHECKPOINT_FILE = Path.home() / ".claf" / "engagement_checkpoint.json"
+NOTEPAD = Path.home() / "MD" / "notepad.md"
 CLAF_URL = os.environ.get("CLAF_URL", "http://localhost:8000/v1/messages")
 MAX_TURNS = int(os.environ.get("CLAF_ENGAGEMENT_MAX_TURNS", "20"))
+CHECKPOINT_EVERY = int(os.environ.get("CLAF_CHECKPOINT_EVERY", "5"))
 
 # Make claf_permissions importable from the toolbox/ subdirectory.
 _CLAF_DIR = Path(__file__).resolve().parent.parent
@@ -272,6 +275,82 @@ def _mark_task(text: str, start: int, end: int, status: str, result: str) -> str
 def _add_engagement_qa(task_name: str, qa: list[tuple[str, str]]) -> None:
     for q, a in qa:
         _log("engagement_qa", task=task_name, question=q, answer=str(a)[:500])
+
+
+def _checkpoint_needed(turn: int, every: int = CHECKPOINT_EVERY) -> bool:
+    """Return True when `turn` is a positive multiple of `every`."""
+    return every > 0 and turn % every == 0
+
+
+def _build_checkpoint_text(
+    task_name: str,
+    completed: int,
+    total: int,
+    qa: list[tuple[str, str]],
+    remaining_steps: list[str],
+) -> str:
+    """Return a human-readable checkpoint block for notepad.md."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines = [
+        f"## Checkpoint — {task_name} — {now}",
+        "",
+        f"Progress: {completed}/{total} steps completed.",
+        "",
+        "### Done so far",
+    ]
+    for q, a in qa:
+        lines.append(f"- {q}: {str(a)[:120]}")
+    if not qa:
+        lines.append("- (no steps completed yet)")
+    lines.extend(["", "### Next"])
+    for step in remaining_steps:
+        lines.append(f"- {step}")
+    if not remaining_steps:
+        lines.append("- (no remaining steps)")
+    lines.extend([
+        "",
+        "Status: PAUSED — run `python3 ~/projects/claf/toolbox/engagement_loop.py` to continue.",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def _write_checkpoint(
+    name: str,
+    completed: int,
+    total: int,
+    qa: list[tuple[str, str]],
+    remaining: list[str],
+) -> None:
+    """Persist machine-readable checkpoint and append human summary to notepad."""
+    data = {
+        "task_name": name,
+        "completed_steps": completed,
+        "total_steps": total,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CHECKPOINT_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    note = _build_checkpoint_text(name, completed, total, qa, remaining)
+    NOTEPAD.parent.mkdir(parents=True, exist_ok=True)
+    with NOTEPAD.open("a", encoding="utf-8") as f:
+        f.write("\n" + note + "\n")
+
+
+def _load_checkpoint() -> dict | None:
+    """Load the machine-readable checkpoint, or None if missing/invalid."""
+    if not CHECKPOINT_FILE.exists():
+        return None
+    try:
+        return json.loads(CHECKPOINT_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _clear_checkpoint() -> None:
+    """Remove the checkpoint file when a task finishes or is blocked."""
+    if CHECKPOINT_FILE.exists():
+        CHECKPOINT_FILE.unlink()
 
 
 def run_once(dry_run: bool = False) -> str:
