@@ -102,6 +102,21 @@
       ]
     },
     {
+      "name": "job_email_scan",
+      "enabled": true,
+      "category": "email",
+      "requires_approval": false,
+      "requires_credentials": false,
+      "description": "Scan every configured IMAP email account and return a concise summary of recent job-related messages (hiring alerts, applications, recruiter outreach, etc.).",
+      "commands": [
+        "scan my emails for job related emails",
+        "job related emails",
+        "what job emails do I have",
+        "scan all email accounts for jobs",
+        "find job emails"
+      ]
+    },
+    {
       "name": "claf_mode",
       "enabled": true,
       "category": "shell",

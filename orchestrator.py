@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import enum
 import hashlib
 import json
 import os
@@ -152,6 +153,7 @@ from claf_config import (
     MODE, PROVIDERS, describe, select_provider, _is_hard_task, _is_action_turn,
     _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
     next_cloud_peer, pick_cloud_peer, select_local_tools, _EMAIL_SIGNALS,
+    _matches_toolbox_command,
 )
 import claf_permissions
 import claf_throttle as throttle
@@ -1406,6 +1408,10 @@ def openai_compat_chat(provider, messages: list[dict], tools: list[dict] | None 
         tool_count=len(tools) if tools else 0, msg_count=len(messages))
     with httpx.Client(timeout=120.0) as client:
         r = client.post(provider.url, json=payload, headers=headers)
+        if not r.is_success:
+            log("cloud_provider_error", provider=provider.name, model=provider.model,
+                status=r.status_code, error_body=r.text[:800],
+                payload_keys=list(payload.keys()), tool_count=len(tools) if tools else 0)
         r.raise_for_status()
         data = r.json()
     message = data["choices"][0]["message"]
@@ -2066,6 +2072,8 @@ def list_models():
             "created_at": "2026-05-19T00:00:00Z",
         })
 
+    return {"object": "list", "data": data}
+
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
@@ -2314,6 +2322,205 @@ def _count_replan_epochs(msgs: list) -> int:
         if m.get("role") == "user"
         and "[CLAF-LOOP-RESET" in str(m.get("content", ""))
     )
+
+
+class _LoopState(str, enum.Enum):
+    """Linear states for the tool-call loop state machine."""
+    IDLE = "idle"
+    ACTING = "acting"          # assistant emitted tool_use, waiting for result
+    OBSERVING = "observing"    # last message carries tool_result(s)
+    SUMMARIZING = "summarizing"  # per-epoch turn cap hit; compress + reset
+    PAUSED = "paused"          # hard cap / max epochs exhausted; ask operator
+    DONE = "done"              # no tools or task complete
+
+
+def _derive_loop_state(
+    msgs: list,
+    tools: list[dict] | None,
+    _task_pending: int | None = None,
+) -> tuple[_LoopState, dict]:
+    """Return the current tool-loop state plus diagnostic counts.
+
+    The state machine is the single source of truth for deciding whether to
+    dispatch to a model, compress context, or stop and ask the operator.
+    """
+    _max_loop_turns = int(os.environ.get("CLAF_MAX_LOOP_TURNS", "12") or "12")
+    _max_epochs = int(os.environ.get("CLAF_MAX_REPLAN_EPOCHS", "1") or "1")
+    _max_total = int(os.environ.get("CLAF_MAX_TOTAL_TOOL_TURNS", "24") or "24")
+
+    total_cycles = 0
+    for m in msgs:
+        if m.get("role") != "assistant":
+            continue
+        ct = m.get("content", [])
+        if isinstance(ct, list) and any(
+            isinstance(b, dict) and b.get("type") == "tool_use" for b in ct
+        ):
+            total_cycles += 1
+
+    cycles_since_reset = _count_tool_cycles_since_reset(msgs)
+    epochs = _count_replan_epochs(msgs)
+
+    info = {
+        "total_cycles": total_cycles,
+        "cycles_since_reset": cycles_since_reset,
+        "epochs": epochs,
+        "max_loop_turns": _max_loop_turns,
+        "max_epochs": _max_epochs,
+        "max_total": _max_total,
+    }
+
+    if not tools:
+        return _LoopState.DONE, info
+
+    if _task_pending is not None and _task_pending == 0:
+        return _LoopState.DONE, info
+
+    # Absolute hard stop: never exceed the total tool-turn budget.
+    if _max_total > 0 and total_cycles >= _max_total:
+        return _LoopState.PAUSED, info
+
+    # Per-epoch cap: when we hit it, either reset+compress once or stop.
+    if _max_loop_turns > 0 and cycles_since_reset >= _max_loop_turns:
+        if epochs >= _max_epochs:
+            return _LoopState.PAUSED, info
+        return _LoopState.SUMMARIZING, info
+
+    # Transition based on the most recent message.
+    if not msgs:
+        return _LoopState.IDLE, info
+    last = msgs[-1]
+    role = last.get("role")
+    content = last.get("content", [])
+    if isinstance(content, str):
+        content = [{"type": "text", "text": content}]
+
+    if role == "assistant" and any(
+        isinstance(b, dict) and b.get("type") == "tool_use" for b in content
+    ):
+        return _LoopState.ACTING, info
+
+    if role == "user" and any(
+        isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+    ):
+        return _LoopState.OBSERVING, info
+
+    return _LoopState.IDLE, info
+
+
+def _compress_loop_history(
+    msgs: list[dict],
+    keep_recent_pairs: int = 2,
+    max_tool_result_chars: int = 400,
+) -> list[dict]:
+    """Return a shallow copy of `msgs` with older tool-result pairs compressed.
+
+    Keeps the most recent `keep_recent_pairs` assistant tool_use + user
+    tool_result pairs intact. Older pairs are summarized so the 8K local
+    context window does not explode during long sequential loops.
+    """
+    if not msgs:
+        return msgs
+
+    # Identify indices of assistant messages that contain tool_use blocks.
+    tool_use_indices: list[int] = []
+    tool_use_ids: set[str] = set()
+    for i, m in enumerate(msgs):
+        if m.get("role") != "assistant":
+            continue
+        ct = m.get("content", [])
+        if not isinstance(ct, list):
+            continue
+        for b in ct:
+            if isinstance(b, dict) and b.get("type") == "tool_use":
+                tool_use_ids.add(b.get("id", ""))
+                tool_use_indices.append(i)
+                break
+
+    # Pair each tool_use with the following user tool_result(s).
+    pairs: list[tuple[int, int]] = []
+    for tu_idx in tool_use_indices:
+        for j in range(tu_idx + 1, len(msgs)):
+            m = msgs[j]
+            if m.get("role") != "user":
+                continue
+            ct = m.get("content", [])
+            if not isinstance(ct, list):
+                continue
+            if any(
+                isinstance(b, dict)
+                and b.get("type") == "tool_result"
+                and b.get("tool_use_id") in tool_use_ids
+                for b in ct
+            ):
+                pairs.append((tu_idx, j))
+                break
+
+    if len(pairs) <= keep_recent_pairs:
+        return list(msgs)
+
+    keep_set = set()
+    for tu_idx, tr_idx in pairs[-keep_recent_pairs:]:
+        keep_set.add(tu_idx)
+        keep_set.add(tr_idx)
+
+    out: list[dict] = []
+    for i, m in enumerate(msgs):
+        if i in keep_set or m.get("role") != "user":
+            out.append(m)
+            continue
+
+        ct = m.get("content", [])
+        if not isinstance(ct, list):
+            out.append(m)
+            continue
+
+        new_blocks = []
+        compressed_any = False
+        for b in ct:
+            if (
+                isinstance(b, dict)
+                and b.get("type") == "tool_result"
+                and b.get("tool_use_id") in tool_use_ids
+            ):
+                raw = ""
+                if isinstance(b.get("content"), str):
+                    raw = b["content"]
+                elif isinstance(b.get("content"), list):
+                    raw = " ".join(
+                        x.get("text", "") for x in b["content"] if isinstance(x, dict)
+                    )
+                snippet = raw[:max_tool_result_chars].replace("\n", " ")
+                if len(raw) > max_tool_result_chars:
+                    snippet += " …"
+                name = "tool"
+                for tu in msgs:
+                    tuc = tu.get("content", [])
+                    if not isinstance(tuc, list):
+                        continue
+                    for tub in tuc:
+                        if (
+                            isinstance(tub, dict)
+                            and tub.get("type") == "tool_use"
+                            and tub.get("id") == b.get("tool_use_id")
+                        ):
+                            name = tub.get("name", name)
+                            break
+                new_blocks.append({
+                    "type": "tool_result",
+                    "tool_use_id": b.get("tool_use_id", ""),
+                    "content": f"[summarized {name} result]: {snippet}",
+                })
+                compressed_any = True
+            else:
+                new_blocks.append(b)
+
+        if compressed_any:
+            out.append({**m, "content": new_blocks})
+        else:
+            out.append(m)
+
+    return out
 
 
 def _parse_bounded_file_task(text: str) -> list[dict] | None:
@@ -2741,54 +2948,61 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
 
     requested_model = body.get("model", "claude-sonnet-4-6")
 
-    # Hard loop-turn cap. Count assistant messages that contain at least one
-    # tool_use block — each is one "loop turn". If the history already has
-    # >= CLAF_MAX_LOOP_TURNS such turns, force end_turn now instead of
-    # dispatching to the model. Prevents "running wild" when the charter's
-    # NEVER-STOP rule keeps the agent looping past task completion.
-    _max_loop_turns = int(os.environ.get("CLAF_MAX_LOOP_TURNS", "0") or "0")
-    if _max_loop_turns > 0:
-        _max_epochs = int(os.environ.get("CLAF_MAX_REPLAN_EPOCHS", "3") or "3")
-        _tool_cycles = _count_tool_cycles_since_reset(_msgs_probe)
-        _epochs = _count_replan_epochs(_msgs_probe)
-        if _tool_cycles >= _max_loop_turns:
-            log("loop_turn_cap_hit", turns=_tool_cycles, epoch=_epochs,
-                max_turns=_max_loop_turns, max_epochs=_max_epochs)
-            if _epochs >= _max_epochs:
-                # Exhausted all replan epochs — genuinely need human input.
-                _stop_text = (
-                    f"[CLAF: {_epochs} replan epochs × {_max_loop_turns} turns "
-                    f"({_epochs * _max_loop_turns} total tool turns) — goal not "
-                    "confirmed complete. What specific information or action do you "
-                    "need from the operator to finish? Ask ONE question.]"
-                )
-                _stop_resp = {
-                    "id": f"msg_epoch_stop_{_epochs}",
-                    "type": "message",
-                    "role": "assistant",
-                    "model": requested_model,
-                    "content": [{"type": "text", "text": _stop_text}],
-                    "stop_reason": "end_turn",
-                    "stop_sequence": None,
-                    "usage": {"input_tokens": 0, "output_tokens": len(_stop_text.split())},
-                }
-                if body.get("stream"):
-                    return StreamingResponse(_sse_events(_stop_resp), media_type="text/event-stream")
-                return JSONResponse(_stop_resp)
-            else:
-                # Inject a REPLAN marker and fall through to normal dispatch.
-                # Counter resets because _count_tool_cycles_since_reset only
-                # counts turns AFTER the most recent marker.
-                _reset_content = (
-                    f"[CLAF-LOOP-RESET epoch={_epochs + 1}/{_max_epochs}] "
-                    f"{_tool_cycles} tool turns used this epoch. "
-                    "Briefly note what you completed, then immediately continue "
-                    "toward the goal with your next tool call. Do NOT stop."
-                )
-                body["messages"] = list(_msgs_probe) + [
-                    {"role": "user", "content": _reset_content}
-                ]
-                log("loop_replan_injected", epoch=_epochs + 1, turns_this_epoch=_tool_cycles)
+    # Linear state machine for the long sequential tool-call loop.
+    # Replaces the old nested cap logic with explicit states:
+    #   IDLE / ACTING / OBSERVING / SUMMARIZING / PAUSED / DONE.
+    _loop_state, _loop_info = _derive_loop_state(
+        _msgs_probe,
+        body.get("tools"),
+        _task_pending_count(),
+    )
+    turn["loop_state"] = _loop_state.value
+    turn["loop_info"] = _loop_info
+    log("loop_state", state=_loop_state.value, **_loop_info)
+
+    if _loop_state == _LoopState.PAUSED:
+        # Hard cap or max replan epochs exhausted — stop and ask the operator.
+        _stop_text = (
+            f"[CLAF: {_loop_info['epochs']} replan epoch(s), "
+            f"{_loop_info['total_cycles']} total tool turns. "
+            "Context budget or iteration cap reached. What specific information or action do you "
+            "need from the operator to finish? Ask ONE question.]"
+        )
+        _stop_resp = {
+            "id": f"msg_loop_pause_{_loop_info['epochs']}_{_loop_info['total_cycles']}",
+            "type": "message",
+            "role": "assistant",
+            "model": requested_model,
+            "content": [{"type": "text", "text": _stop_text}],
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "usage": {"input_tokens": 0, "output_tokens": len(_stop_text.split())},
+        }
+        if body.get("stream"):
+            return StreamingResponse(_sse_events(_stop_resp), media_type="text/event-stream")
+        return JSONResponse(_stop_resp)
+
+    # Per-step context compression: older tool_use/tool_result pairs are
+    # summarized so the local 8K window doesn't explode on long loops.
+    _compress_threshold = int(os.environ.get("CLAF_COMPRESS_AFTER_CYCLES", "2") or "2")
+    if _loop_info["total_cycles"] > _compress_threshold:
+        _compressed = _compress_loop_history(_msgs_probe)
+        if _compressed != _msgs_probe:
+            body["messages"] = _compressed
+            log("loop_history_compressed", total_cycles=_loop_info["total_cycles"])
+
+    if _loop_state == _LoopState.SUMMARIZING:
+        # Inject a context-reset marker and let the model continue.
+        _reset_content = (
+            f"[CLAF-LOOP-RESET epoch={_loop_info['epochs'] + 1}/{_loop_info['max_epochs']}] "
+            f"{_loop_info['cycles_since_reset']} tool turns used this epoch. "
+            "Briefly summarize what you completed, then immediately continue toward the goal with your next tool call. Do NOT stop."
+        )
+        body["messages"] = list(body.get("messages", [])) + [
+            {"role": "user", "content": _reset_content}
+        ]
+        log("loop_replan_injected", epoch=_loop_info['epochs'] + 1,
+            turns_this_epoch=_loop_info['cycles_since_reset'])
 
     # LOCAL mode + hard-task signal = explicit refusal. The operator picked
     # local for a reason; don't silently serve a request that needed cloud.
@@ -2992,11 +3206,78 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     if _is_correction:
         log("correction_detected", prompt_snippet=_prompt_text_lower[:120])
     _max_fallback_tier: int = (
-        1 if _is_correction       # skip Groq; use tool-capable Cerebras/OpenRouter
-        else 2 if trickle_mode == "flash"   # Groq(1) + Cerebras(2) before local
+        3 if _is_correction       # allow OpenRouter so corrections can fix tool mistakes
+        else 3 if trickle_mode == "flash"   # Cerebras -> Groq -> OpenRouter before local
         else 3 if trickle_mode == "tap"
         else 999  # explicit cloud escalation — all tiers allowed
     )
+    # ── SERVER-SIDE TOOLBOX DISPATCH ─────────────────────────────────────────
+    # Toolbox-matched commands bypass the 3B entirely. The model's xdg-open prior
+    # and weak JSON emission make it unreliable for these deterministic tools.
+    # Run the minted tool directly here; return the result as a clean response.
+    _tb_tool = _matches_toolbox_command(body)
+    if _tb_tool:
+        try:
+            import importlib.util as _ilu
+            _tool_path = Path(__file__).resolve().parent / "toolbox" / f"{_tb_tool}.py"
+            if _tool_path.exists():
+                _spec = _ilu.spec_from_file_location(f"toolbox_{_tb_tool}", _tool_path)
+                _mod = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_mod)
+                _tb_args: dict = {}
+                _last_msg_raw = ""
+                for _m in reversed(body.get("messages", [])):
+                    if _m.get("role") == "user":
+                        _c = _m.get("content")
+                        _last_msg_raw = _c if isinstance(_c, str) else json.dumps(_c)
+                        break
+                import re as _re_tb
+                _jm = _re_tb.search(r'\{[^{}]*\}', _last_msg_raw)
+                if _jm:
+                    try:
+                        _tb_args = json.loads(_jm.group(0))
+                    except Exception:
+                        _tb_args = {}
+                # Always pass raw user text so tools can parse positional args
+                _tb_args.setdefault("_raw_command", _last_msg_raw)
+                _result_text = _mod.run(_tb_args)
+                log("toolbox_direct_dispatch", tool=_tb_tool, args=_tb_args,
+                    result_len=len(_result_text))
+                _tb_resp = wrap_anthropic_response(
+                    requested_model,
+                    [{"type": "text", "text": _result_text}],
+                    {"input_tokens": 0, "output_tokens": len(_result_text.split())},
+                    False,
+                )
+                turn["status"] = turn.get("status", "ok")
+                log(
+                    "response_out",
+                    turn_id=turn["turn_id"],
+                    tier=getattr(provider, 'tier', None),
+                    name=getattr(provider, 'name', 'unknown'),
+                    out_chars=len(_result_text),
+                    tool_use=False,
+                    tool_use_count=0,
+                    input_tokens=0,
+                    output_tokens=len(_result_text.split()),
+                    trickle_mode=trickle_mode,
+                )
+                log_conversation(
+                    turn["turn_id"],
+                    "assistant",
+                    [{"type": "text", "text": _result_text}],
+                    model=requested_model,
+                    provider=getattr(provider, 'name', 'unknown'),
+                )
+                if body.get("stream"):
+                    return StreamingResponse(_sse_events(_tb_resp),
+                                             media_type="text/event-stream")
+                return JSONResponse(_tb_resp)
+        except Exception as _tb_exc:
+            log("toolbox_direct_dispatch_error", tool=_tb_tool, error=str(_tb_exc))
+            # Fall through to normal model dispatch on any error
+    # ── END SERVER-SIDE TOOLBOX DISPATCH ─────────────────────────────────────
+
     _rate_limit_failed: set[str] = set()
     content_blocks: list[dict] = []
     usage = {"input_tokens": 0, "output_tokens": 0}

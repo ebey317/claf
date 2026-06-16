@@ -84,12 +84,30 @@ def main() -> int:
     print(f"[DaddyDOM] Raw response length: {len(text)} chars")
 
     data = json.loads(text)
-    result = data["result"]
 
-    url = result.get("url", args.url or "")
-    title = result.get("title", "")
-    viewport = result.get("viewport", {})
-    elements = result.get("elements", [])
+    def _unwrap_page(payload):
+        """Handle the action-result envelope returned by the Sensei bridge.
+
+        The MCP server now returns a CLAF-style envelope:
+        {"final_state": {"url": ..., "elements": [...]}, "verdict": ...}.
+        Older shapes returned the page dict directly or under a "result" key.
+        """
+        if isinstance(payload, dict):
+            if "final_state" in payload and isinstance(payload["final_state"], dict):
+                return payload["final_state"]
+            if "result" in payload and isinstance(payload["result"], dict):
+                return payload["result"]
+        return payload
+
+    page = _unwrap_page(data)
+    if not isinstance(page, dict):
+        print(f"[DaddyDOM] Unexpected page shape: {type(page).__name__}", file=sys.stderr)
+        return 1
+
+    url = page.get("url", args.url or "")
+    title = page.get("title", "")
+    viewport = page.get("viewport", {})
+    elements = page.get("elements", [])
 
     output = {
         "url": url,

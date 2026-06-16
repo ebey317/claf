@@ -53,6 +53,15 @@ Add a tool here, then run `python3 ~/projects/claf/toolbox/mint_tool.py` to rege
 - **never:** infinite loops, recursive self-queuing
 - **example:** run task list → Bash: python3 ~/projects/claf/toolbox/run_tool.py engagement_loop '{}'
 
+## job_email_scan
+- **command:** scan my emails for job related emails | job related emails | what job emails do I have | scan all email accounts for jobs | find job emails
+- **args:** limit (int, optional) — messages per account to scan (default 30)
+- **description:** Scan every configured IMAP email account and return a concise summary of recent job-related messages (hiring alerts, applications, recruiter outreach, etc.).
+- **module:** job_email_scan.py
+- **never:** browser, xdg-open, manual per-account check_inbox loops
+- **example:** scan my emails for job related emails → Bash: python3 ~/projects/claf/toolbox/run_tool.py job_email_scan '{}'
+- **example:** find job emails → Bash: python3 ~/projects/claf/toolbox/run_tool.py job_email_scan '{"limit": 50}'
+
 ## claf_mode
 - **command:** claf mode | permission mode | shift tab | cycle mode | what mode | set mode
 - **args:** cycle (bool, optional) | set (string, optional) | list (bool, optional)
