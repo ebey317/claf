@@ -1,5 +1,10 @@
 # CLAF — Closed-Loop Agent Framework
 
+[![Tests](https://github.com/ebey317/claf/actions/workflows/test.yml/badge.svg)](https://github.com/ebey317/claf/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+> **TL;DR:** Run Claude Code without paying per token. Local Ollama handles 90% of tasks; cloud escalates selectively.
+
 **Off-grid is the architecture. Everything else is convenience.**
 
 Claude Code CLI and the Chrome MCP extension stay exactly as Anthropic ships them. The LLM calls get redirected to a local FastAPI proxy that translates Anthropic's `/v1/messages` into Ollama. By default the proxy cannot reach the internet — even if a stray API key is sitting in your environment. If the grid drops, this still runs.

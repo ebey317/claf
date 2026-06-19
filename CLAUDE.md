@@ -5,7 +5,7 @@
 | Name | Hostname | IP | Local model |
 |------|----------|----|-------------|
 | **Mary** | Madam-Mary | localhost | hermes3:3b + qwen3-vl:2b |
-| **Elijah** | elijah-ms-7b86 | 100.121.76.101 (Tailscale/SSH) | qwen3-vl:8b (text + tools + vision — sole model as of 2026-06-14) |
+| **Elijah** | elijah-ms-7b86 | 100.121.76.101 (Tailscale/SSH) | qwen2.5-coder:64k (tools) + qwen3-vl:64k (vision) |
 
 Never say "gaming PC", "Madam-Mary", "the box", or raw IPs. Always **Mary** or **Elijah**.
 Full handoff dock + open work: `~/MD/HANDOFF.md`
