@@ -36,12 +36,6 @@ import hashlib
 import json
 import os
 import platform
-
-def get_page_content(browser_data):
-    if len(browser_data) > 500:
-        return browser_data[:500] + "... [truncated]"
-    return browser_data
-
 import re
 import time
 import uuid

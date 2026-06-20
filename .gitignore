@@ -1,17 +1,54 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
+# Virtual environments
 .venv/
+venv/
+env/
 lib/
-*.log
+
+# Secrets and local config — NEVER commit these
 .env
 .env.*
+!.env.example
 !profiles/*.env
-.DS_Store
 
-# local-only artifacts
-secretary.db
+# Logs and runtime artifacts
+*.log
+*.log.*
+orchestrator.log
+secretary.log
+sensei_mcp_server.log
+
+# Database state (runtime-written; ephemeral)
+*.db
+*.db-shm
+*.db-wal
+
+# Backup / temp files
 *.backup.*
+*.bak
+*.bak.*
 *.PRE_REVERT.*
 *.pre_bridge
 *.pre_splice*
-*.bak
+*.orig
+
+# Session / transcript artifacts (internal, non-reviewable)
+SESSION_TRANSCRIPT_*.md
+latency_summary.json
+C[0-9][0-9]_*.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
