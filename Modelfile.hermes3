@@ -1,0 +1,15 @@
+FROM hermes3:3b
+
+# GTX 1660 Ti — 28 transformer layers, all fit in VRAM at Q4_K_M
+PARAMETER num_gpu 28
+
+# 2048 keeps KV cache ~256 MB; safe alongside qwen2.5-coder:64k (4.7 GB)
+PARAMETER num_ctx 2048
+
+# 10 of 12 AMD cores for CPU batch ops / any layer spillover
+PARAMETER num_thread 10
+
+# Half the default batch size — saves ~150 MB VRAM headroom
+PARAMETER num_batch 256
+
+SYSTEM """You are a helpful AI assistant. When calling tools, use valid JSON. Maintain context across the conversation."""
