@@ -17,6 +17,7 @@ LAYER key:
   SCHEMA      repaired calls missing required params are rejected
   BUG         literal shapes seen in production logs
 """
+
 from __future__ import annotations
 import json, os, sys, pathlib
 
@@ -33,14 +34,23 @@ except ImportError as _import_err:
         os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), __file__] + sys.argv[1:])
     sys.exit(f"IMPORT ERROR: {_import_err}\nRun with PYTHONPATH=/home/elijah/projects/claf")
 
+
 # ── tool factory ────────────────────────────────────────────────────────────
 def _tool(name: str, props: dict, required: list[str], desc: str = "") -> dict:
-    return {"name": name, "description": desc or name,
-            "input_schema": {"type": "object", "properties": props, "required": required}}
+    return {
+        "name": name,
+        "description": desc or name,
+        "input_schema": {"type": "object", "properties": props, "required": required},
+    }
+
 
 TOOLS = [
     _tool("Read", {"file_path": {"type": "string"}}, ["file_path"]),
-    _tool("Write", {"file_path": {"type": "string"}, "content": {"type": "string"}}, ["file_path", "content"]),
+    _tool(
+        "Write",
+        {"file_path": {"type": "string"}, "content": {"type": "string"}},
+        ["file_path", "content"],
+    ),
     _tool("Bash", {"command": {"type": "string"}}, ["command"]),
     _tool("TaskCreate", {"subject": {"type": "string"}}, ["subject"]),
 ]
@@ -54,6 +64,7 @@ def _reg(id_, layer):
     def decorator(fn):
         CORPUS.append({"id": id_, "layer": layer, "fn": fn})
         return fn
+
     return decorator
 
 
@@ -70,6 +81,7 @@ def _arg(repaired: list[dict], key: str):
 
 # ── LAYER: VALID ───────────────────────────────────────────────────────────
 
+
 @_reg("v1_valid_read", "VALID")
 def _():
     text = json.dumps({"name": "Read", "arguments": {"file_path": "/tmp/x.txt"}})
@@ -79,6 +91,7 @@ def _():
 
 
 # ── LAYER: QUOTING ──────────────────────────────────────────────────────────
+
 
 @_reg("q1_unquoted_keys", "QUOTING")
 def _():
@@ -116,6 +129,7 @@ def _():
 
 # ── LAYER: TRAILING ─────────────────────────────────────────────────────────
 
+
 @_reg("t1_trailing_comma", "TRAILING")
 def _():
     text = '{"name": "Write", "arguments": {"file_path": "/tmp/x.txt", "content": "hi",},}'
@@ -134,6 +148,7 @@ def _():
 
 
 # ── LAYER: SHORTHAND ────────────────────────────────────────────────────────
+
 
 @_reg("s1_bash_string_arg", "SHORTHAND")
 def _():
@@ -162,7 +177,7 @@ def _():
 
 @_reg("s4_write_python_dict_literal", "SHORTHAND")
 def _():
-    text = '{"name": "Write", "arguments": "{\'path\': \'/tmp/x.txt\', \'content\': \'hi\'}"}'
+    text = "{\"name\": \"Write\", \"arguments\": \"{'path': '/tmp/x.txt', 'content': 'hi'}\"}"
     r = _repair_malformed_tool_json(text, TOOLS)
     assert _first(r)["name"] == "Write"
     assert _arg(r, "file_path") == "/tmp/x.txt"
@@ -170,6 +185,7 @@ def _():
 
 
 # ── LAYER: SCHEMA ───────────────────────────────────────────────────────────
+
 
 @_reg("x1_missing_required_rejected", "SCHEMA")
 def _():
@@ -187,6 +203,7 @@ def _():
 
 
 # ── LAYER: BUG ──────────────────────────────────────────────────────────────
+
 
 @_reg("b1_session5_literal", "BUG")
 def _():

@@ -27,9 +27,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-
-
-
 # ----------------------------------------------------------------------------
 # Mode — three SENSEI modes; legacy names accepted as aliases for one cycle.
 # ----------------------------------------------------------------------------
@@ -52,24 +49,25 @@ assert MODE in _VALID_MODES, (
 # Provider type — `pool` distinguishes local from cloud peers.
 # ----------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class Provider:
-    tier: int                # ordering within pool; lower = picked first
-    name: str                # short slug used in logs
-    pool: str                # "local" | "cloud"
-    kind: str                # "ollama" | "openai_compat" | "anthropic"
-    model: str               # model tag/id at the provider
-    url: str                 # endpoint
-    env_key: str | None      # env var holding the auth token; None for local
-    enabled: bool            # gated by env-key presence (always True for local)
+    tier: int  # ordering within pool; lower = picked first
+    name: str  # short slug used in logs
+    pool: str  # "local" | "cloud"
+    kind: str  # "ollama" | "openai_compat" | "anthropic"
+    model: str  # model tag/id at the provider
+    url: str  # endpoint
+    env_key: str | None  # env var holding the auth token; None for local
+    enabled: bool  # gated by env-key presence (always True for local)
     notes: str = ""
-    max_tools: int | None = None          # cap tools array before sending; None = no cap
-    max_sys_chars: int | None = None      # override CLAF_CLOUD_SYS_MAX_CHARS for this peer
-    max_msgs: int | None = None           # override CLAF_CLOUD_MAX_MSGS for this peer
-    max_msg_content: int | None = None    # override CLAF_CLOUD_MSG_CONTENT_MAX per message
-    full_context: bool = False            # True = send FULL memory/history untrimmed
-                                          # (capable peers that tolerate large bodies).
-                                          # Charter still prepended; nothing is cut.
+    max_tools: int | None = None  # cap tools array before sending; None = no cap
+    max_sys_chars: int | None = None  # override CLAF_CLOUD_SYS_MAX_CHARS for this peer
+    max_msgs: int | None = None  # override CLAF_CLOUD_MAX_MSGS for this peer
+    max_msg_content: int | None = None  # override CLAF_CLOUD_MSG_CONTENT_MAX per message
+    full_context: bool = False  # True = send FULL memory/history untrimmed
+    # (capable peers that tolerate large bodies).
+    # Charter still prepended; nothing is cut.
 
 
 def _env_present(name: str | None) -> bool:
@@ -95,15 +93,18 @@ def _cloud_peers() -> list[Provider]:
     Tier numbers are a configurable ordering hint, not a quality ranking."""
     return [
         Provider(
-            tier=1, name="cerebras", pool="cloud", kind="openai_compat",
+            tier=1,
+            name="cerebras",
+            pool="cloud",
+            kind="openai_compat",
             model="gpt-oss-120b",
             url="https://api.cerebras.ai/v1/chat/completions",
             env_key="CEREBRAS_API_KEY",
             enabled=_env_present("CEREBRAS_API_KEY"),
             notes="PRIMARY flash / OVERSEER — ultra-fast. 32 tools carries a "
-                  "representative of EVERY capability (terminal+email+task+browser) "
-                  "so the model can REASON which tool fits instead of being handed "
-                  "browser-only. 64K ctx, ~55KB body at 32 tools — under limits.",
+            "representative of EVERY capability (terminal+email+task+browser) "
+            "so the model can REASON which tool fits instead of being handed "
+            "browser-only. 64K ctx, ~55KB body at 32 tools — under limits.",
             max_tools=32,
             max_sys_chars=6000,
             max_msgs=6,
@@ -112,19 +113,25 @@ def _cloud_peers() -> list[Provider]:
             max_msg_content=3000,
         ),
         Provider(
-            tier=2, name="groq", pool="cloud", kind="openai_compat",
+            tier=2,
+            name="groq",
+            pool="cloud",
+            kind="openai_compat",
             model="llama-3.1-8b-instant",
             url="https://api.groq.com/openai/v1/chat/completions",
             env_key="GROQ_API_KEY",
             enabled=_env_present("GROQ_API_KEY"),
             notes="text-only fallback — 413s on any tool payload, 14400 req/day.",
-            max_tools=0,         # body too large even at 2 tools (11.6KB hits 413)
+            max_tools=0,  # body too large even at 2 tools (11.6KB hits 413)
             max_sys_chars=3000,
             max_msgs=4,
             max_msg_content=400,
         ),
         Provider(
-            tier=3, name="openrouter", pool="cloud", kind="openai_compat",
+            tier=3,
+            name="openrouter",
+            pool="cloud",
+            kind="openai_compat",
             model="anthropic/claude-sonnet-4.6",
             url="https://openrouter.ai/api/v1/chat/completions",
             env_key="OPENROUTER_API_KEY",
@@ -135,7 +142,10 @@ def _cloud_peers() -> list[Provider]:
             max_msgs=8,
         ),
         Provider(
-            tier=4, name="anthropic", pool="cloud", kind="anthropic",
+            tier=4,
+            name="anthropic",
+            pool="cloud",
+            kind="anthropic",
             model="claude-sonnet-4-6",
             url="https://api.anthropic.com/v1/messages",
             env_key="ANTHROPIC_API_KEY",
@@ -149,7 +159,10 @@ def _cloud_peers() -> list[Provider]:
             # Ollama Cloud — model deleted (operator removed unused models).
             # Re-enable if model is re-pulled. Disabled to prevent failed calls
             # blocking legitimate cloud peers (Anthropic, etc.).
-            tier=5, name="ollama-cloud-coder", pool="cloud", kind="ollama",
+            tier=5,
+            name="ollama-cloud-coder",
+            pool="cloud",
+            kind="ollama",
             model="qwen3-coder:480b-cloud",
             url=os.environ.get("CLAF_OLLAMA_URL", "http://localhost:11434/api/chat"),
             env_key=None,
@@ -157,7 +170,10 @@ def _cloud_peers() -> list[Provider]:
             notes="DISABLED — model deleted; re-enable after re-pulling qwen3-coder:480b-cloud",
         ),
         Provider(
-            tier=6, name="deepseek", pool="cloud", kind="openai_compat",
+            tier=6,
+            name="deepseek",
+            pool="cloud",
+            kind="openai_compat",
             model="deepseek-chat",
             url="https://api.deepseek.com/v1/chat/completions",
             env_key="DEEPSEEK_API_KEY",
@@ -165,7 +181,10 @@ def _cloud_peers() -> list[Provider]:
             notes="DeepSeek direct; enabled when DEEPSEEK_API_KEY is present",
         ),
         Provider(
-            tier=7, name="openai", pool="cloud", kind="openai_compat",
+            tier=7,
+            name="openai",
+            pool="cloud",
+            kind="openai_compat",
             model="gpt-4o-mini",
             url="https://api.openai.com/v1/chat/completions",
             env_key="OPENAI_API_KEY",
@@ -173,7 +192,10 @@ def _cloud_peers() -> list[Provider]:
             notes="OpenAI direct; enabled when OPENAI_API_KEY is present",
         ),
         Provider(
-            tier=8, name="fireworks", pool="cloud", kind="openai_compat",
+            tier=8,
+            name="fireworks",
+            pool="cloud",
+            kind="openai_compat",
             model="accounts/fireworks/models/deepseek-v4-pro",
             url="https://api.fireworks.ai/inference/v1/chat/completions",
             env_key="FIREWORKS_API_KEY",
@@ -182,7 +204,10 @@ def _cloud_peers() -> list[Provider]:
             max_tools=40,
         ),
         Provider(
-            tier=9, name="gemini", pool="cloud", kind="openai_compat",
+            tier=9,
+            name="gemini",
+            pool="cloud",
+            kind="openai_compat",
             model="gemini-2.5-flash",
             url="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             env_key="GEMINI_API_KEY",
@@ -212,44 +237,105 @@ if MODE in ("hybrid", "cloud"):
 # Content signals that local 3B models struggle with
 _HARD_TASK_SIGNALS = {
     "complex_reasoning": [
-        "analyze", "evaluate", "compare and contrast", "deep dive",
-        "explain why", "root cause", "trade-off", "pros and cons",
+        "analyze",
+        "evaluate",
+        "compare and contrast",
+        "deep dive",
+        "explain why",
+        "root cause",
+        "trade-off",
+        "pros and cons",
     ],
     "creative": [
-        "write a story", "write an essay", "creative writing",
-        "poem", "narrative", "dialogue",
+        "write a story",
+        "write an essay",
+        "creative writing",
+        "poem",
+        "narrative",
+        "dialogue",
     ],
     "debug": [
-        "debug", "fix this", "what went wrong", "traceback",
-        "stack trace", "error message", "exception",
+        "debug",
+        "fix this",
+        "what went wrong",
+        "traceback",
+        "stack trace",
+        "error message",
+        "exception",
     ],
     "math_logic": [
-        "prove", "theorem", "equation", "calculate", "solve for",
-        "algorithm", "complex logic",
+        "prove",
+        "theorem",
+        "equation",
+        "calculate",
+        "solve for",
+        "algorithm",
+        "complex logic",
     ],
     "multi_step": [
-        "step by step", "walk me through", "how do i build",
-        "create a system", "design a", "architecture",
+        "step by step",
+        "walk me through",
+        "how do i build",
+        "create a system",
+        "design a",
+        "architecture",
     ],
     "action": [
         # Browser/tool intents. The gaming PC local runs CLAF_LOCAL_MAX_TOOLS=0
         # (talk-only), so any turn that needs hands must reach a cloud peer.
-        "open a tab", "open tab", "open mcp", "mcp tab", "new tab",
-        "open chrome", "screenshot", "take a picture", "click", "browse",
-        "navigate", "scroll", "web search", "search the web", "go to http",
-        "fill out", "fill the form", "apply to", "read the page",
-        ".com", ".net", ".org",
+        "open a tab",
+        "open tab",
+        "open mcp",
+        "mcp tab",
+        "new tab",
+        "open chrome",
+        "screenshot",
+        "take a picture",
+        "click",
+        "browse",
+        "navigate",
+        "scroll",
+        "web search",
+        "search the web",
+        "go to http",
+        "fill out",
+        "fill the form",
+        "apply to",
+        "read the page",
+        ".com",
+        ".net",
+        ".org",
         # Task-management intents: local 3b misses TaskCreate/TaskUpdate schema.
         # When local returns text-only on these, giveup interceptor replans to cloud.
-        "create task", "add task", "new task", "mark complete", "mark task",
-        "update task", "complete task", "claim task", "finish task",
-        "taskcreate", "taskupdate", "task complete",
+        "create task",
+        "add task",
+        "new task",
+        "mark complete",
+        "mark task",
+        "update task",
+        "complete task",
+        "claim task",
+        "finish task",
+        "taskcreate",
+        "taskupdate",
+        "task complete",
         # Email intents: local returns text instead of calling email-bridge tools.
-        "check email", "check emails", "check my email", "check inbox",
-        "scan email", "read email", "job related email", "email job",
-        "any emails", "check mail", "check all email",
+        "check email",
+        "check emails",
+        "check my email",
+        "check inbox",
+        "scan email",
+        "read email",
+        "job related email",
+        "email job",
+        "any emails",
+        "check mail",
+        "check all email",
         # Inventory / tool listing intents
-        "tool inventory", "list tools", "what tools", "tool list",
+        "tool inventory",
+        "list tools",
+        "what tools",
+        "tool list",
     ],
 }
 
@@ -258,19 +344,18 @@ _HARD_TASK_SIGNALS = {
 # tools). Action intents only force cloud when local is tool-less
 # (CLAF_LOCAL_MAX_TOOLS=0); that check lives in _is_hard_task/_select_mode.
 _HARD_NEEDLES = re.compile(
-    r"(?i)(" + "|".join(
-        re.escape(w) for cat, words in _HARD_TASK_SIGNALS.items()
-        if cat != "action" for w in words
-    ) + r")"
+    r"(?i)("
+    + "|".join(
+        re.escape(w) for cat, words in _HARD_TASK_SIGNALS.items() if cat != "action" for w in words
+    )
+    + r")"
 )
 
 # Action intents compiled separately so the orchestrator's giveup interceptor
 # can ask "was this turn supposed to act?" without re-running full hard-task
 # detection (which also matches analysis/creative turns where text is correct).
 _ACTION_NEEDLES = re.compile(
-    r"(?i)(" + "|".join(
-        re.escape(w) for w in _HARD_TASK_SIGNALS["action"]
-    ) + r")"
+    r"(?i)(" + "|".join(re.escape(w) for w in _HARD_TASK_SIGNALS["action"]) + r")"
 )
 
 # Web-search intents must reach CLOUD for accurate, current answers — operator
@@ -290,9 +375,7 @@ def _last_user_text(msgs) -> str:
         return ""
     content = msgs[-1].get("content", "")
     if isinstance(content, list):
-        return " ".join(
-            b.get("text", "") if isinstance(b, dict) else str(b) for b in content
-        )
+        return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
     return str(content)
 
 
@@ -311,8 +394,12 @@ def _is_action_turn(body: dict) -> bool:
     for m in msgs:
         if m.get("role") == "user":
             c = m.get("content", "")
-            text = c if isinstance(c, str) else " ".join(
-                b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"
+            text = (
+                c
+                if isinstance(c, str)
+                else " ".join(
+                    b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"
+                )
             )
             if _ACTION_NEEDLES.search(text.lower()):
                 return True
@@ -331,8 +418,26 @@ def _is_action_turn(body: dict) -> bool:
 _TOOLBOX_REGISTRY = Path(__file__).resolve().parent / "toolbox" / "registry.json"
 _toolbox_cmd_cache: dict = {"mtime": None, "variants": []}
 _TOOLBOX_STOPWORDS = {
-    "my", "the", "a", "an", "to", "this", "that", "please", "use", "lets",
-    "for", "of", "on", "in", "go", "it", "me", "your", "all", "and",
+    "my",
+    "the",
+    "a",
+    "an",
+    "to",
+    "this",
+    "that",
+    "please",
+    "use",
+    "lets",
+    "for",
+    "of",
+    "on",
+    "in",
+    "go",
+    "it",
+    "me",
+    "your",
+    "all",
+    "and",
 }
 
 
@@ -354,11 +459,14 @@ def _toolbox_variants() -> list[tuple[str, str, set]]:
         if not tool.get("enabled", True):
             continue
         name = tool.get("name", "")
-        for raw in (tool.get("commands") or []):
+        for raw in tool.get("commands") or []:
             phrase = re.sub(r"\[[^\]]*\]", " ", raw.lower())  # drop [url]/[website]
             phrase = " ".join(phrase.split())
-            toks = {w for w in re.findall(r"[a-z]+", phrase)
-                    if w not in _TOOLBOX_STOPWORDS and len(w) > 2}
+            toks = {
+                w
+                for w in re.findall(r"[a-z]+", phrase)
+                if w not in _TOOLBOX_STOPWORDS and len(w) > 2
+            }
             variants.append((name, phrase, toks))
     _toolbox_cmd_cache["mtime"] = mtime
     _toolbox_cmd_cache["variants"] = variants
@@ -410,9 +518,7 @@ def _is_hard_task(body: dict) -> bool:
 
     system = body.get("system") or ""
     if isinstance(system, list):
-        system_text = "".join(
-            b.get("text", "") if isinstance(b, dict) else str(b) for b in system
-        )
+        system_text = "".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in system)
     else:
         system_text = str(system)
     # Claude Code's normal system prompt (tool definitions + agent instructions)
@@ -428,7 +534,8 @@ def _is_hard_task(body: dict) -> bool:
     # These should stay local even as message count grows, otherwise long
     # bounded loops (e.g. create 60 files) escalate to cloud and die.
     _mid_tool_loop = any(
-        isinstance(msg.get("content"), list) and any(
+        isinstance(msg.get("content"), list)
+        and any(
             isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result")
             for b in msg["content"]
         )
@@ -452,8 +559,7 @@ def _is_hard_task(body: dict) -> bool:
             for msg in msgs:
                 c = msg.get("content", [])
                 if isinstance(c, list) and any(
-                    isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result")
-                    for b in c
+                    isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result") for b in c
                 ):
                     return True
             # Tool-less local also can't handle fresh action commands.
@@ -463,7 +569,8 @@ def _is_hard_task(body: dict) -> bool:
         # Background autocomplete / suggestion-mode turns are noise — never flash.
         # "No tools needed for suggestion" = error tool_result from suggestion loop.
         _LOCAL_EXEMPT = (
-            "[suggestion mode]", "no tools needed for suggestion",
+            "[suggestion mode]",
+            "no tools needed for suggestion",
             "suggest what the user might naturally type",
         )
         if any(ex in text.lower() for ex in _LOCAL_EXEMPT):
@@ -472,19 +579,26 @@ def _is_hard_task(body: dict) -> bool:
         # selection: STANDING ORDERS / SESSION SNAPSHOT contain hard-needle words
         # (architecture, algorithm, analyze) that false-trigger flash.
         import re as _re_ht
+
         for _hdr in (
-            r'\[standing orders\][^\[]*', r'\[task_seed_required[^\]]*\][^\[]*',
-            r'\[session snapshot\][^\[]*', r'\[heartbeat[^\]]*\][^\[]*',
-            r'\[non-negotiables\][^\[]*', r'\[topology\][^\[]*',
-            r'\[retry_schema[^\]]*\][^\[]*', r'\[open tasks[^\]]*\][^\[]*',
-            r'<system-reminder>.*?</system-reminder>',
+            r"\[standing orders\][^\[]*",
+            r"\[task_seed_required[^\]]*\][^\[]*",
+            r"\[session snapshot\][^\[]*",
+            r"\[heartbeat[^\]]*\][^\[]*",
+            r"\[non-negotiables\][^\[]*",
+            r"\[topology\][^\[]*",
+            r"\[retry_schema[^\]]*\][^\[]*",
+            r"\[open tasks[^\]]*\][^\[]*",
+            r"<system-reminder>.*?</system-reminder>",
         ):
-            text = _re_ht.sub(_hdr, ' ', text, flags=_re_ht.DOTALL)
-        text = ' '.join(text.split())
+            text = _re_ht.sub(_hdr, " ", text, flags=_re_ht.DOTALL)
+        text = " ".join(text.split())
         # Web search → cloud for accuracy/currency, unless off-grid. Operator
         # rule 2026-06-11. (Apocalyptic mode keeps it local — cloud unreachable.)
-        if (os.environ.get("CLAF_MODE", "hybrid") not in ("off_grid", "local")
-                and _WEBSEARCH_NEEDLES.search(text)):
+        if os.environ.get("CLAF_MODE", "hybrid") not in (
+            "off_grid",
+            "local",
+        ) and _WEBSEARCH_NEEDLES.search(text):
             return True
         if "[CLOUD]" in text or "[ESCALATE]" in text:
             return True
@@ -536,7 +650,13 @@ _TAP_INTENT_PATTERNS = {
     "regex": ("regex", "regular expression", "pattern match", "validate email"),
     "sql": ("sql query", "select ", " from ", " where ", "join on", "group by"),
     "bash": ("bash script", "bash one-liner", "shell script", "find -", "awk ", "sed "),
-    "debug": ("explain this error", "stack trace", "traceback", "why is this failing", "root cause"),
+    "debug": (
+        "explain this error",
+        "stack trace",
+        "traceback",
+        "why is this failing",
+        "root cause",
+    ),
 }
 
 
@@ -628,11 +748,9 @@ def _select_mode(body: dict):
         last = msgs[-1] if msgs else {}
         content = last.get("content", "")
         if isinstance(content, list):
-            if any(isinstance(b, dict) and b.get("type") == "tool_result"
-                   for b in content):
+            if any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
                 return "flash", {"reason": "tool_loop_continuation"}
-            content = " ".join(b.get("text", "") for b in content
-                               if isinstance(b, dict))
+            content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
         if _ACTION_NEEDLES.search(str(content)):
             return "flash", {"reason": "action_intent_needs_tools"}
 
@@ -652,8 +770,7 @@ def _select_mode(body: dict):
         _pe_is_tool_result = (
             _pe_last.get("role") == "user"
             and isinstance(_pe_content, list)
-            and any(isinstance(_b, dict) and _b.get("type") == "tool_result"
-                    for _b in _pe_content)
+            and any(isinstance(_b, dict) and _b.get("type") == "tool_result" for _b in _pe_content)
         )
         if _pe_is_tool_result:
             return "flash", {"reason": "overseer_loop_continuation"}
@@ -666,6 +783,7 @@ def _select_mode(body: dict):
 # ----------------------------------------------------------------------------
 # Routing decision
 # ----------------------------------------------------------------------------
+
 
 def _pick_cloud_peer() -> Provider:
     """Pick the enabled cloud peer.
@@ -716,10 +834,11 @@ def next_cloud_peer(failed_names: set[str], max_tier: int = 999) -> "Provider | 
     fall back to local.
     """
     cloud = sorted(
-        [p for p in PROVIDERS
-         if p.pool == "cloud" and p.enabled
-         and p.name not in failed_names
-         and p.tier <= max_tier],
+        [
+            p
+            for p in PROVIDERS
+            if p.pool == "cloud" and p.enabled and p.name not in failed_names and p.tier <= max_tier
+        ],
         key=lambda p: p.tier,
     )
     return cloud[0] if cloud else None
@@ -769,9 +888,9 @@ def select_provider(body: dict, prefer_tier: int | None = None) -> Provider:
         local = next((p for p in enabled if p.pool == "local"), None)
         if local is None:
             raise RuntimeError("local mode but no local provider enabled")
-        assert all(p.pool == "local" for p in PROVIDERS), (
-            "local mode must contain only local-pool providers"
-        )
+        assert all(
+            p.pool == "local" for p in PROVIDERS
+        ), "local mode must contain only local-pool providers"
         return local
 
     if MODE == "cloud":
@@ -801,6 +920,7 @@ def select_provider(body: dict, prefer_tier: int | None = None) -> Provider:
 # Self-check (no network)
 # ----------------------------------------------------------------------------
 
+
 def describe() -> dict:
     """Render the current config as a dict suitable for /healthz / startup banner."""
     return {
@@ -821,9 +941,7 @@ def describe() -> dict:
         "local_provider": next(
             (p.name for p in PROVIDERS if p.pool == "local" and p.enabled), None
         ),
-        "cloud_peers_enabled": [
-            p.name for p in PROVIDERS if p.pool == "cloud" and p.enabled
-        ],
+        "cloud_peers_enabled": [p.name for p in PROVIDERS if p.pool == "cloud" and p.enabled],
     }
 
 
@@ -835,17 +953,29 @@ TOOL_GROUPS: dict[str, list[str]] = {
     "browser": [
         # Ordered by loop frequency — when MAX_TOOLS caps the list, the
         # tail gets cut first. search = web search (Google via sensei).
-        "mcp__sensei__tab_create", "mcp__sensei__read_full",
-        "mcp__sensei__click", "mcp__sensei__fill",
-        "mcp__sensei__screenshot", "mcp__sensei__browse",
-        "mcp__sensei__search", "mcp__sensei__scroll",
+        "mcp__sensei__tab_create",
+        "mcp__sensei__read_full",
+        "mcp__sensei__click",
+        "mcp__sensei__fill",
+        "mcp__sensei__screenshot",
+        "mcp__sensei__browse",
+        "mcp__sensei__search",
+        "mcp__sensei__scroll",
         "mcp__sensei__key_press",
     ],
     "filesystem": [
-        "Read", "Bash", "Glob", "Grep", "Edit", "Write",
+        "Read",
+        "Bash",
+        "Glob",
+        "Grep",
+        "Edit",
+        "Write",
     ],
     "tasks": [
-        "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
+        "TaskList",
+        "TaskCreate",
+        "TaskUpdate",
+        "TaskGet",
     ],
     "email": [
         # Email-bridge MCP lives on Mary; include all its tools so local can
@@ -857,30 +987,83 @@ TOOL_GROUPS: dict[str, list[str]] = {
         "mcp__email-bridge__list_folders",
     ],
     "core": [
-        "TaskList", "Read", "Bash",
+        "TaskList",
+        "Read",
+        "Bash",
     ],
 }
 
 _BROWSER_SIGNALS = {
-    "click", "screenshot", "navigate", "browse", "tab", "page",
-    "url", "open", "website", "browser", "scroll", "fill",
+    "click",
+    "screenshot",
+    "navigate",
+    "browse",
+    "tab",
+    "page",
+    "url",
+    "open",
+    "website",
+    "browser",
+    "scroll",
+    "fill",
     # web-search intents → browser group (mcp__sensei__search lives there)
-    "google", "search the web", "web search", "look up",
+    "google",
+    "search the web",
+    "web search",
+    "look up",
 }
 _FILE_SIGNALS = {
-    "read", "write", "edit", "file", "grep", "glob", "bash", "run",
-    "code", "script", "directory", "path", "find", "locate",
-    "search locally", "local search", "locally", "on my computer",
-    "app", "application", "program", "executable",
+    "read",
+    "write",
+    "edit",
+    "file",
+    "grep",
+    "glob",
+    "bash",
+    "run",
+    "code",
+    "script",
+    "directory",
+    "path",
+    "find",
+    "locate",
+    "search locally",
+    "local search",
+    "locally",
+    "on my computer",
+    "app",
+    "application",
+    "program",
+    "executable",
 }
 _TASK_SIGNALS = {
-    "task", "todo", "list", "create task", "update task",
+    "task",
+    "todo",
+    "list",
+    "create task",
+    "update task",
 }
 _EMAIL_SIGNALS = {
-    "email", "emails", "inbox", "trash", "folder", "folders",
-    "aol", "gmail", "outlook", "mail", "message", "messages",
-    "check mail", "scan mail", "check inbox", "scan inbox",
-    "job related", "indeed", "ziprecruiter", "linkedin",
+    "email",
+    "emails",
+    "inbox",
+    "trash",
+    "folder",
+    "folders",
+    "aol",
+    "gmail",
+    "outlook",
+    "mail",
+    "message",
+    "messages",
+    "check mail",
+    "scan mail",
+    "check inbox",
+    "scan inbox",
+    "job related",
+    "indeed",
+    "ziprecruiter",
+    "linkedin",
     "thunderbird",
 }
 
@@ -898,6 +1081,7 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
 
     Returns None when CLAF_LOCAL_MAX_TOOLS=0 (explicit strip-tools mode)."""
     import os
+
     max_tools = int(os.environ.get("CLAF_LOCAL_MAX_TOOLS", "6"))
     if max_tools == 0:
         return None
@@ -919,19 +1103,21 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
     _last_msg = msgs[-1] if msgs else {}
     _last_content = _last_msg.get("content", [])
     _is_continuation = isinstance(_last_content, list) and any(
-        isinstance(b, dict) and b.get("type") == "tool_result"
-        for b in _last_content
+        isinstance(b, dict) and b.get("type") == "tool_result" for b in _last_content
     )
-    _NAME_TO_GROUP = {n: g for g, names in TOOL_GROUPS.items()
-                      if g != "core" for n in names}
+    _NAME_TO_GROUP = {n: g for g, names in TOOL_GROUPS.items() if g != "core" for n in names}
     for msg in (reversed(msgs) if _is_continuation else []):
         c = msg.get("content", [])
         if not isinstance(c, list):
             continue
         _hist_group = next(
-            (_NAME_TO_GROUP[b["name"]] for b in c
-             if isinstance(b, dict) and b.get("type") == "tool_use"
-             and b.get("name") in _NAME_TO_GROUP),
+            (
+                _NAME_TO_GROUP[b["name"]]
+                for b in c
+                if isinstance(b, dict)
+                and b.get("type") == "tool_use"
+                and b.get("name") in _NAME_TO_GROUP
+            ),
             None,
         )
         if _hist_group:
@@ -953,8 +1139,7 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
             return c
         if isinstance(c, list):
             return " ".join(
-                b.get("text", "") for b in c
-                if isinstance(b, dict) and b.get("type") == "text"
+                b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"
             )
         return ""
 
@@ -974,27 +1159,28 @@ def select_local_tools(body: dict, all_tools: list[dict]) -> "list[dict] | None"
     # signals fire on every email or file request, producing multi-group and
     # giving the local model browser tools it then misuses.
     import re as _re
+
     for _hdr in (
         # Claude Code injects a <system-reminder> block with CLAUDE.md / memory
         # sections; it is packed with browser keywords and must be ignored.
-        r'<system-reminder>.*?</system-reminder>',
-        r'\[standing orders\][^\[]*',
-        r'\[task_seed_required[^\]]*\][^\[]*',
-        r'\[session snapshot\][^\[]*',
-        r'\[heartbeat[^\]]*\][^\[]*',
-        r'\[non-negotiables\][^\[]*',
-        r'\[topology\][^\[]*',
-        r'\[retry_schema[^\]]*\][^\[]*',
-        r'\[open tasks[^\]]*\][^\[]*',
+        r"<system-reminder>.*?</system-reminder>",
+        r"\[standing orders\][^\[]*",
+        r"\[task_seed_required[^\]]*\][^\[]*",
+        r"\[session snapshot\][^\[]*",
+        r"\[heartbeat[^\]]*\][^\[]*",
+        r"\[non-negotiables\][^\[]*",
+        r"\[topology\][^\[]*",
+        r"\[retry_schema[^\]]*\][^\[]*",
+        r"\[open tasks[^\]]*\][^\[]*",
     ):
-        prompt = _re.sub(_hdr, ' ', prompt, flags=_re.DOTALL)
-    prompt = ' '.join(prompt.split())  # collapse whitespace
+        prompt = _re.sub(_hdr, " ", prompt, flags=_re.DOTALL)
+    prompt = " ".join(prompt.split())  # collapse whitespace
 
     scores = {
-        "browser":    sum(1 for s in _BROWSER_SIGNALS if s in prompt),
-        "filesystem": sum(1 for s in _FILE_SIGNALS    if s in prompt),
-        "tasks":      sum(1 for s in _TASK_SIGNALS    if s in prompt),
-        "email":      sum(1 for s in _EMAIL_SIGNALS  if s in prompt),
+        "browser": sum(1 for s in _BROWSER_SIGNALS if s in prompt),
+        "filesystem": sum(1 for s in _FILE_SIGNALS if s in prompt),
+        "tasks": sum(1 for s in _TASK_SIGNALS if s in prompt),
+        "email": sum(1 for s in _EMAIL_SIGNALS if s in prompt),
     }
 
     # Multi-group selection: if multiple signal groups are present, include them

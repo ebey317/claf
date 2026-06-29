@@ -9,6 +9,7 @@ Reads ~/projects/claf/toolbox/tools.md and generates:
 Usage:
   python3 ~/projects/claf/toolbox/mint_tool.py [--dry-run]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -68,11 +69,13 @@ def parse_args(args_line: str) -> list[dict]:
             continue
         m = re.match(r"(\w+)\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)", part)
         if m:
-            parsed.append({
-                "name": m.group(1),
-                "type": m.group(2),
-                "required": m.group(3).lower() == "required",
-            })
+            parsed.append(
+                {
+                    "name": m.group(1),
+                    "type": m.group(2),
+                    "required": m.group(3).lower() == "required",
+                }
+            )
     return parsed
 
 
@@ -92,17 +95,19 @@ def build_registry(tools: list[dict]) -> dict:
     entries = []
     for tool in tools:
         commands = [c.strip() for c in tool.get("command", "").split("|") if c.strip()]
-        entries.append({
-            "name": tool["name"],
-            "enabled": True,
-            "category": infer_category(tool),
-            "requires_approval": False,
-            "requires_credentials": False,
-            "description": tool.get("description", ""),
-            # Trigger phrases — consumed by the router (_matches_toolbox_command)
-            # to pin matching requests to LOCAL so a toolbox tool never escalates.
-            "commands": commands,
-        })
+        entries.append(
+            {
+                "name": tool["name"],
+                "enabled": True,
+                "category": infer_category(tool),
+                "requires_approval": False,
+                "requires_credentials": False,
+                "description": tool.get("description", ""),
+                # Trigger phrases — consumed by the router (_matches_toolbox_command)
+                # to pin matching requests to LOCAL so a toolbox tool never escalates.
+                "commands": commands,
+            }
+        )
     return {"tools": entries}
 
 
@@ -169,7 +174,7 @@ def update_charter(tools: list[dict], dry_run: bool) -> str:
             break
 
     if start_idx is not None and end_idx is not None:
-        new_lines = lines[:start_idx] + generated + lines[end_idx + 1:]
+        new_lines = lines[:start_idx] + generated + lines[end_idx + 1 :]
     else:
         # Insert after the static KNOWN COMMANDS block (before IDENTITY)
         identity_idx = None

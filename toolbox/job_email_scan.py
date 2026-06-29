@@ -10,6 +10,7 @@ The filter is config-driven, not hard-coded:
 If that file is missing, a generic default config is written there. Edit it to
 add your own sender domains, keywords, and negative filters.
 """
+
 from __future__ import annotations
 
 import json
@@ -168,14 +169,16 @@ def _scan_account(name: str, limit: int) -> dict:
                 _, msg_data = conn.fetch(uid, "(RFC822)")
                 raw = msg_data[0][1]
                 parsed = bridge.parse_email(raw)
-                result["matches"].append({
-                    "uid": uid.decode(),
-                    "date": parsed["date"],
-                    "from": parsed["from"],
-                    "subject": parsed["subject"],
-                    "snippet": _snippet(parsed["body"]),
-                    "_is_job": False,
-                })
+                result["matches"].append(
+                    {
+                        "uid": uid.decode(),
+                        "date": parsed["date"],
+                        "from": parsed["from"],
+                        "subject": parsed["subject"],
+                        "snippet": _snippet(parsed["body"]),
+                        "_is_job": False,
+                    }
+                )
         finally:
             try:
                 conn.logout()
@@ -231,9 +234,7 @@ def run(args: dict | None = None) -> str:
 
         matches = [m for m in data["matches"] if _is_job_related(m, cfg, subject_re)]
         total_matches += len(matches)
-        lines.append(
-            f"{name} — {len(matches)} job-related message(s) (scanned {data['scanned']}):"
-        )
+        lines.append(f"{name} — {len(matches)} job-related message(s) (scanned {data['scanned']}):")
         if not matches:
             lines.append("  (none)")
         else:

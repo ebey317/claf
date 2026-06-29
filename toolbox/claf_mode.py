@@ -9,6 +9,7 @@ Usage:
     python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"cycle": true}'
     python3 ~/projects/claf/toolbox/run_tool.py claf_mode '{"set": "auto"}'
 """
+
 from __future__ import annotations
 
 import argparse
@@ -49,8 +50,9 @@ def main() -> int:
     parser.add_argument("--set", help="Set mode explicitly")
     parser.add_argument("--list", action="store_true", help="List valid modes")
     parser.add_argument("--json", action="store_true", help="Output JSON")
-    parser.add_argument("--export", action="store_true",
-                        help="Output shell export command for the current mode")
+    parser.add_argument(
+        "--export", action="store_true", help="Output shell export command for the current mode"
+    )
     args = parser.parse_args()
 
     tool_args = {}

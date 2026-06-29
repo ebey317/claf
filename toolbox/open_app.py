@@ -5,6 +5,7 @@ Known apps get their exact command from _APP_MAP. Any other name is treated
 as a CLI command looked up in PATH — so "open ollama" works the same way
 typing `ollama` in a terminal does.
 """
+
 import json
 import shutil
 import subprocess
@@ -80,8 +81,20 @@ _APP_MAP = {
 
 # Commands we should never launch, even if they are in PATH.
 _BLOCKLIST = {
-    "sudo", "su", "rm", "mv", "cp", "dd", "mkfs", "fdisk", "parted",
-    "shutdown", "reboot", "poweroff", "halt", "init",
+    "sudo",
+    "su",
+    "rm",
+    "mv",
+    "cp",
+    "dd",
+    "mkfs",
+    "fdisk",
+    "parted",
+    "shutdown",
+    "reboot",
+    "poweroff",
+    "halt",
+    "init",
 }
 
 
@@ -94,7 +107,7 @@ def run(args: dict | None = None) -> str:
         raw = (args.get("_raw_command") or "").strip().lower()
         for prefix in ("open ", "launch ", "start "):
             if raw.startswith(prefix):
-                app = raw[len(prefix):].strip().split()[0] if raw[len(prefix):].strip() else ""
+                app = raw[len(prefix) :].strip().split()[0] if raw[len(prefix) :].strip() else ""
                 break
 
     if not app:
@@ -120,8 +133,9 @@ def run(args: dict | None = None) -> str:
         cmd = [exe]
 
     try:
-        subprocess.Popen(cmd, start_new_session=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         return f"Launched {cmd[0]}."
     except FileNotFoundError:
         return f"[tool error] App not found: {cmd[0]}"

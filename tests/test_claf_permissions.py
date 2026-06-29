@@ -1,4 +1,5 @@
 """Tests for claf_permissions mode mapping."""
+
 import os
 import sys
 from pathlib import Path
@@ -24,6 +25,7 @@ def test_auto_allows_bash():
     os.environ["CLAF_PERMISSION_MODE"] = "auto"
     # reload module to pick up env change
     import importlib
+
     importlib.reload(cp)
     assert cp.is_action_allowed("bash", "ls") == "allow"
     assert cp.is_action_allowed("edit") == "allow"
@@ -36,6 +38,7 @@ def test_auto_denies_sudo():
 def test_plan_returns_plan():
     os.environ["CLAF_PERMISSION_MODE"] = "plan"
     import importlib
+
     importlib.reload(cp)
     assert cp.is_action_allowed("bash", "ls") == "plan"
 
@@ -43,6 +46,7 @@ def test_plan_returns_plan():
 def test_accept_edits_allows_safe_bash():
     os.environ["CLAF_PERMISSION_MODE"] = "acceptEdits"
     import importlib
+
     importlib.reload(cp)
     assert cp.is_action_allowed("bash", "mkdir foo") == "allow"
     assert cp.is_action_allowed("bash", "sudo apt update") == "deny"

@@ -1,4 +1,5 @@
 """Tests for engagement_loop checkpoint helpers."""
+
 import sys
 from pathlib import Path
 

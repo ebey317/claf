@@ -13,6 +13,7 @@ Env:
     CLAF_ORCH_URL   default http://127.0.0.1:8000
     CLAF_LOG        default ~/projects/claf/orchestrator.log
 """
+
 from __future__ import annotations
 import json, os, sys, time, urllib.request, pathlib
 
@@ -29,24 +30,36 @@ except ImportError as _import_err:
     sys.exit(f"IMPORT ERROR: {_import_err}\nRun with PYTHONPATH=/home/elijah/projects/claf")
 
 ORCH = os.environ.get("CLAF_ORCH_URL", "http://127.0.0.1:8000").rstrip("/")
-LOG = pathlib.Path(os.environ.get(
-    "CLAF_LOG", str(CLAF / "orchestrator.log")))
+LOG = pathlib.Path(os.environ.get("CLAF_LOG", str(CLAF / "orchestrator.log")))
 
-SYSTEM = ("You are Claude Code. Identity: MCP. Use the requested tool exactly; "
-          "do not add commentary or explanations.")
+SYSTEM = (
+    "You are Claude Code. Identity: MCP. Use the requested tool exactly; "
+    "do not add commentary or explanations."
+)
+
 
 # ── tool factory ────────────────────────────────────────────────────────────
 def _tool(name: str, props: dict, required: list[str], desc: str = "") -> dict:
-    return {"name": name, "description": desc or name,
-            "input_schema": {"type": "object", "properties": props, "required": required}}
+    return {
+        "name": name,
+        "description": desc or name,
+        "input_schema": {"type": "object", "properties": props, "required": required},
+    }
+
 
 TOOLS = [
     _tool("Read", {"file_path": {"type": "string"}}, ["file_path"]),
-    _tool("Write", {"file_path": {"type": "string"}, "content": {"type": "string"}},
-          ["file_path", "content"]),
+    _tool(
+        "Write",
+        {"file_path": {"type": "string"}, "content": {"type": "string"}},
+        ["file_path", "content"],
+    ),
     _tool("Bash", {"command": {"type": "string"}}, ["command"]),
-    _tool("TaskCreate", {"subject": {"type": "string"}, "description": {"type": "string"}},
-          ["subject", "description"]),
+    _tool(
+        "TaskCreate",
+        {"subject": {"type": "string"}, "description": {"type": "string"}},
+        ["subject", "description"],
+    ),
     _tool("mcp__sensei__tab_create", {"url": {"type": "string"}}, ["url"]),
 ]
 
@@ -54,54 +67,95 @@ TOOLS = [
 # Each entry: id, prompt, expected tool name, expected args dict.
 CORPUS = [
     # Write — exact path + content
-    ("w1", "Write the exact text 'alpha' to /tmp/claf_formation_w1.txt", "Write",
-     {"file_path": "/tmp/claf_formation_w1.txt", "content": "alpha"}),
-    ("w2", "Create file /tmp/claf_formation_w2.txt containing 'beta'", "Write",
-     {"file_path": "/tmp/claf_formation_w2.txt", "content": "beta"}),
-    ("w3", "Save 'gamma' to /tmp/claf_formation_w3.txt", "Write",
-     {"file_path": "/tmp/claf_formation_w3.txt", "content": "gamma"}),
-    ("w4", "Write /tmp/claf_formation_w4.txt with content 'delta'", "Write",
-     {"file_path": "/tmp/claf_formation_w4.txt", "content": "delta"}),
-
+    (
+        "w1",
+        "Write the exact text 'alpha' to /tmp/claf_formation_w1.txt",
+        "Write",
+        {"file_path": "/tmp/claf_formation_w1.txt", "content": "alpha"},
+    ),
+    (
+        "w2",
+        "Create file /tmp/claf_formation_w2.txt containing 'beta'",
+        "Write",
+        {"file_path": "/tmp/claf_formation_w2.txt", "content": "beta"},
+    ),
+    (
+        "w3",
+        "Save 'gamma' to /tmp/claf_formation_w3.txt",
+        "Write",
+        {"file_path": "/tmp/claf_formation_w3.txt", "content": "gamma"},
+    ),
+    (
+        "w4",
+        "Write /tmp/claf_formation_w4.txt with content 'delta'",
+        "Write",
+        {"file_path": "/tmp/claf_formation_w4.txt", "content": "delta"},
+    ),
     # Read — exact path (files are pre-created by the harness)
-    ("r1", "Read the file /tmp/claf_formation_r1.txt", "Read",
-     {"file_path": "/tmp/claf_formation_r1.txt"}),
-    ("r2", "Read /tmp/claf_formation_r2.txt", "Read",
-     {"file_path": "/tmp/claf_formation_r2.txt"}),
-    ("r3", "Show me the contents of /tmp/claf_formation_r3.txt", "Read",
-     {"file_path": "/tmp/claf_formation_r3.txt"}),
-    ("r4", "Open and read /tmp/claf_formation_r4.txt", "Read",
-     {"file_path": "/tmp/claf_formation_r4.txt"}),
-
+    (
+        "r1",
+        "Read the file /tmp/claf_formation_r1.txt",
+        "Read",
+        {"file_path": "/tmp/claf_formation_r1.txt"},
+    ),
+    ("r2", "Read /tmp/claf_formation_r2.txt", "Read", {"file_path": "/tmp/claf_formation_r2.txt"}),
+    (
+        "r3",
+        "Show me the contents of /tmp/claf_formation_r3.txt",
+        "Read",
+        {"file_path": "/tmp/claf_formation_r3.txt"},
+    ),
+    (
+        "r4",
+        "Open and read /tmp/claf_formation_r4.txt",
+        "Read",
+        {"file_path": "/tmp/claf_formation_r4.txt"},
+    ),
     # Bash — exact echo command
-    ("b1", "Run bash command: echo 'echo1'", "Bash",
-     {"command": "echo 'echo1'"}),
-    ("b2", "Execute echo 'echo2' in bash", "Bash",
-     {"command": "echo 'echo2'"}),
-    ("b3", "Bash: echo 'echo3'", "Bash",
-     {"command": "echo 'echo3'"}),
-    ("b4", "Use Bash to echo 'echo4'", "Bash",
-     {"command": "echo 'echo4'"}),
-
+    ("b1", "Run bash command: echo 'echo1'", "Bash", {"command": "echo 'echo1'"}),
+    ("b2", "Execute echo 'echo2' in bash", "Bash", {"command": "echo 'echo2'"}),
+    ("b3", "Bash: echo 'echo3'", "Bash", {"command": "echo 'echo3'"}),
+    ("b4", "Use Bash to echo 'echo4'", "Bash", {"command": "echo 'echo4'"}),
     # Browser — exact URL
-    ("t1", "Open a browser tab to https://example.com", "mcp__sensei__tab_create",
-     {"url": "https://example.com"}),
-    ("t2", "Create a browser tab for https://kimi.com", "mcp__sensei__tab_create",
-     {"url": "https://kimi.com"}),
-    ("t3", "Open https://example.org in a new tab", "mcp__sensei__tab_create",
-     {"url": "https://example.org"}),
-    ("t4", "Visit https://example.net via tab_create", "mcp__sensei__tab_create",
-     {"url": "https://example.net"}),
-
+    (
+        "t1",
+        "Open a browser tab to https://example.com",
+        "mcp__sensei__tab_create",
+        {"url": "https://example.com"},
+    ),
+    (
+        "t2",
+        "Create a browser tab for https://kimi.com",
+        "mcp__sensei__tab_create",
+        {"url": "https://kimi.com"},
+    ),
+    (
+        "t3",
+        "Open https://example.org in a new tab",
+        "mcp__sensei__tab_create",
+        {"url": "https://example.org"},
+    ),
+    (
+        "t4",
+        "Visit https://example.net via tab_create",
+        "mcp__sensei__tab_create",
+        {"url": "https://example.net"},
+    ),
     # TaskCreate — exact subject
-    ("c1", "Create a task with subject 'review logs'", "TaskCreate",
-     {"subject": "review logs"}),
-    ("c2", "Make a new task titled 'update documentation'", "TaskCreate",
-     {"subject": "update documentation"}),
-    ("c3", "TaskCreate subject 'test tool formation'", "TaskCreate",
-     {"subject": "test tool formation"}),
-    ("c4", "Add a task: 'clean up temp files'", "TaskCreate",
-     {"subject": "clean up temp files"}),
+    ("c1", "Create a task with subject 'review logs'", "TaskCreate", {"subject": "review logs"}),
+    (
+        "c2",
+        "Make a new task titled 'update documentation'",
+        "TaskCreate",
+        {"subject": "update documentation"},
+    ),
+    (
+        "c3",
+        "TaskCreate subject 'test tool formation'",
+        "TaskCreate",
+        {"subject": "test tool formation"},
+    ),
+    ("c4", "Add a task: 'clean up temp files'", "TaskCreate", {"subject": "clean up temp files"}),
 ]
 
 
@@ -115,9 +169,11 @@ def _prepare_read_files():
 
 def post(body: dict, timeout: int = 120) -> dict:
     req = urllib.request.Request(
-        f"{ORCH}/v1/messages", method="POST",
+        f"{ORCH}/v1/messages",
+        method="POST",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"})
+        headers={"Content-Type": "application/json"},
+    )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
 
@@ -230,12 +286,14 @@ def main():
             notes.append(f"err={r['err'][:40]}")
         if not r["name_ok"] and r["got_name"]:
             notes.append(f"got={r['got_name']}")
-        print(f"{r['id']:4} {r['expected']:22} "
-              f"{'Y' if r['tool_emitted'] else 'N':5} "
-              f"{'Y' if r['name_ok'] else 'N':5} "
-              f"{'Y' if r['schema_ok'] else 'N':7} "
-              f"{'Y' if r['exact_ok'] else 'N':6} "
-              f"{r['dt']:>5}  {', '.join(notes)}")
+        print(
+            f"{r['id']:4} {r['expected']:22} "
+            f"{'Y' if r['tool_emitted'] else 'N':5} "
+            f"{'Y' if r['name_ok'] else 'N':5} "
+            f"{'Y' if r['schema_ok'] else 'N':7} "
+            f"{'Y' if r['exact_ok'] else 'N':6} "
+            f"{r['dt']:>5}  {', '.join(notes)}"
+        )
 
     total = len(rows)
     emit = sum(1 for r in rows if r["tool_emitted"])
@@ -245,8 +303,10 @@ def main():
     repaired = sum(r["repaired"] for r in rows)
     failed = sum(r["repair_failed"] for r in rows)
 
-    print(f"\nSCOREBOARD  emit={emit}/{total}  name={name}/{total}  "
-          f"schema={schema}/{total}  exact={exact}/{total}")
+    print(
+        f"\nSCOREBOARD  emit={emit}/{total}  name={name}/{total}  "
+        f"schema={schema}/{total}  exact={exact}/{total}"
+    )
     print(f"REPAIR LOG  repaired={repaired}  repair_failed={failed}")
 
     result = {
@@ -261,7 +321,6 @@ def main():
     }
     print(f"RESULT {json.dumps(result)}")
     sys.exit(0 if exact >= 16 else 1)
-
 
 
 if __name__ == "__main__":

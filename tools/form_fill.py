@@ -10,6 +10,7 @@ Usage:
     python3 tools/form_fill.py                     # fill example values
     python3 tools/form_fill.py --first Jane --last Doe --email jane@example.com
 """
+
 import argparse
 import json
 import os
@@ -52,7 +53,15 @@ def main() -> int:
         proc.stdin.flush()
         return json.loads(proc.stdout.readline().strip())
 
-    call("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "form-fill", "version": "1.0"}}, 1)
+    call(
+        "initialize",
+        {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "form-fill", "version": "1.0"},
+        },
+        1,
+    )
 
     # X-ray the page first.
     print("[FormFill] Reading current page...")
@@ -105,7 +114,11 @@ def main() -> int:
                 break
         if submit_sel:
             print(f"[FormFill] Clicking submit -> {submit_sel}")
-            r = call("tools/call", {"name": "click", "arguments": {"what": submit_sel, "intercept_popup": True}}, req)
+            r = call(
+                "tools/call",
+                {"name": "click", "arguments": {"what": submit_sel, "intercept_popup": True}},
+                req,
+            )
             print(r["result"]["content"][0]["text"][:200])
             req += 1
 

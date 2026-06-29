@@ -1,60 +1,63 @@
 # CLAF — Closed-Loop Agent Framework
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/ebey317/claf)](https://github.com/ebey317/claf/commits)
+[![Language](https://img.shields.io/github/languages/top/ebey317/claf)](https://github.com/ebey317/claf)
+[![Stars](https://img.shields.io/github/stars/ebey317/claf?style=social)](https://github.com/ebey317/claf/stargazers)
 
-> **TL;DR:** Run Claude Code without paying per token. Local Ollama handles 90% of tasks; cloud escalates selectively. Off-grid is the architecture, not a toggle.
-
-Claude Code CLI and the Chrome MCP extension stay exactly as Anthropic ships them. The LLM calls get silently redirected to a local FastAPI proxy that translates Anthropic's `/v1/messages` format into Ollama's chat API. In `local` mode the proxy cannot reach the internet — even if a stray API key sits in your shell. If the grid drops, this still runs.
-
----
-
-## How it works
-
-Claude Code thinks it is talking to Anthropic. It is actually talking to CLAF. CLAF:
-
-1. **Routes locally first.** Routine work — file reads, task management, browser automation — stays on-device. No tokens, no latency, no cloud dependency.
-2. **Escalates selectively.** Hard tasks (open-ended analysis, web search, multi-step reasoning) get promoted to a cloud peer. The promotion decision is a function of the request, not a user toggle.
-3. **Injects surgical context.** Charter slices (identity, browser rules, task patterns, debug hints) are selected per-request and prepended before any trim — so the local model always knows who it is and what the rules are, regardless of context window pressure.
-4. **Persists task state.** `~/.claf/current_task.json` is written at task start and injected at the top of every turn. When a loop hits the context cap and restarts, the agent reads the file and picks up exactly where it stopped.
+> Run Claude Code without paying per token. Local Ollama handles 90% of tasks; cloud escalates selectively. Off-grid is the architecture, not a toggle.
 
 ---
 
-## Repository layout
+## What It Does
 
-```
-claf/
-├── orchestrator.py            # FastAPI proxy — /v1/messages entry, routing, charter injection
-├── claf_config.py             # Provider registry, select_provider(), routing signals
-├── claf_throttle.py           # Rate-limiting and request metering
-├── claf_permissions.py        # Permission-mode sync with Claude Code
-├── task_state.py              # Persistent task file: load / save / inject
-├── launch.sh                  # Sets ANTHROPIC_BASE_URL + runs claude --strict-mcp-config
-├── watch.py                   # Live routing log viewer (tail orchestrator.log)
-├── .env.example               # All configurable env vars with defaults and notes
-├── charter/
-│   ├── charter_core.md        # Identity + act-first rules (always injected)
-│   ├── charter_browser.md     # Sensei browser tool rules
-│   ├── charter_tasks.md       # Task file lifecycle instructions
-│   └── charter_debug.md       # Debug and retry hints
-├── parity/
-│   └── test_parity.py         # 5-layer scorecard: ROUTING/CONTEXT/CAPABILITY/BEHAVIOR/TERMINATION
-├── profiles/
-│   └── *.env                  # Per-machine model and URL overrides
-└── systemd/                   # User-scope systemd service units
-```
+CLAF is a local proxy that wears Anthropic's skin. Claude Code CLI and the Chrome MCP extension stay exactly as Anthropic ships them — the LLM calls get silently redirected to a local FastAPI proxy that translates Anthropic's `/v1/messages` format into Ollama's chat API. In `local` mode the proxy cannot reach the internet, even if a stray API key sits in your shell. If the grid drops, this still runs.
 
 ---
 
-## Setup
+## Why It Exists
 
-### 1. Prerequisites
+Cloud-based LLM agents are powerful but fragile: they depend on network access, meter every token, and silently break when a provider throttles or a connection drops. CLAF inverts that dependency. The routine 90% of agent work — file reads, task management, browser automation, simple edits — runs on-device with zero token cost and zero latency. Cloud is reserved as a selective escalation tier for hard tasks, not a load-bearing path. The goal is local autonomy first, cloud convenience second.
+
+---
+
+## Features
+
+- **Local-first routing** — Routine work stays on-device. No tokens, no latency, no cloud dependency.
+- **Selective cloud escalation** — Hard tasks (open-ended analysis, web search, multi-step reasoning) get promoted to a cloud peer. The promotion decision is a function of the request, not a user toggle.
+- **Surgical context injection** — Charter slices (identity, browser rules, task patterns, debug hints) are selected per-request and prepended before any trim — so the local model always knows who it is and what the rules are.
+- **Persistent task state** — `~/.claf/current_task.json` is written at task start and injected at the top of every turn. Context-cap restarts pick up exactly where the agent stopped.
+- **Off-grid lock** — Even with cloud keys present, `local` mode returns 423 on any non-Ollama call. Defense in depth against misconfiguration.
+- **Permission-mode sync** — Mirrors Claude Code's permission modes (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`) with deterministic safety gates.
+- **Multi-provider cloud tiers** — Supports Anthropic, OpenRouter, Groq, Cerebras, and Fireworks as opt-in escalation providers.
+- **Live routing visibility** — `watch.py` tails `orchestrator.log` and pretty-prints every routing decision in real time.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Proxy server | FastAPI + Uvicorn |
+| Local model runtime | Ollama (qwen2.5-coder:3b default) |
+| Cloud escalation | Anthropic, OpenRouter, Groq, Cerebras, Fireworks |
+| CLI client | Claude Code CLI (`@anthropic-ai/claude-code`) |
+| Browser automation | Chrome MCP extension + Sensei tool directives |
+| Language | Python 3.10+ |
+| License | MIT |
+
+---
+
+## Quick Start
+
+### Prerequisites
 
 - Python 3.10+
 - [Ollama](https://ollama.ai) running locally (`ollama serve`)
-- At least one model pulled: `ollama pull qwen2.5-coder:latest`
+- At least one model pulled: `ollama pull qwen2.5-coder:3b`
 - Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
 
-### 2. Install
+### Install
 
 ```bash
 git clone https://github.com/ebey317/claf.git
@@ -64,7 +67,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure
+### Configure
 
 ```bash
 cp .env.example .env
@@ -72,7 +75,7 @@ cp .env.example .env
 # Cloud keys go in ~/.master_ai_keys (never in .env)
 ```
 
-### 4. Run
+### Run
 
 ```bash
 # Terminal 1 — start the proxy
@@ -86,7 +89,7 @@ bash launch.sh
 python3 watch.py
 ```
 
-### 5. Verify
+### Verify
 
 ```bash
 curl -s http://localhost:8000/healthz | python3 -m json.tool
@@ -101,7 +104,9 @@ The last call returns an Anthropic-shaped JSON envelope with the local model's t
 
 ---
 
-## Routing modes
+## Usage
+
+### Routing Modes
 
 Set via `CLAF_MODE` in `.env`:
 
@@ -113,11 +118,7 @@ Set via `CLAF_MODE` in `.env`:
 
 Legacy aliases accepted for one upgrade cycle: `off_grid` → `local`, `with_convenience` → `hybrid`.
 
-Defense in depth: even in `hybrid` mode the orchestrator has an `off_grid_lock` check that 423s any non-local provider when `MODE == local`. Paranoia for misconfig.
-
----
-
-## Routing signals
+### Routing Signals
 
 | Incoming signal | Decision |
 |---|---|
@@ -129,11 +130,7 @@ Defense in depth: even in `hybrid` mode the orchestrator has an `off_grid_lock` 
 | mid-loop `tool_result` continuation | → same group as active loop |
 | fresh user message | → re-score from keywords (no history bleed) |
 
-Tool group selection caps at `CLAF_LOCAL_MAX_TOOLS=10` — local models get the right 4–6 tools for the job, not the whole 30-tool surface.
-
----
-
-## Persistent task state
+### Persistent Task State
 
 Write `~/.claf/current_task.json` to give any session a durable to-do list:
 
@@ -150,9 +147,7 @@ Write `~/.claf/current_task.json` to give any session a durable to-do list:
 
 The orchestrator injects this at the top of every local turn — before charter, before everything else. The agent updates items by rewriting the file. When all items are done, it deletes the file. Context cap + restart no longer means starting over.
 
----
-
-## Permission modes
+### Permission Modes
 
 CLAF mirrors Claude Code's permission modes. Set via `CLAF_PERMISSION_MODE` or cycle with **Shift+Tab** after sourcing `claf_shell_integration.sh`:
 
@@ -169,49 +164,69 @@ source "$HOME/projects/claf/claf_shell_integration.sh"
 | `auto` | Most actions, with deterministic safety gates (no sudo / install / destructive) |
 | `bypassPermissions` | Everything; circuit breakers only |
 
-Current mode is persisted in `~/.claf/settings.json` and injected into the system prompt every turn.
-
 ---
 
-## Two-machine topology
-
-Both machines run the same orchestrator. Models are scoped per machine via `profiles/`:
+## Architecture
 
 ```
-Mary (HP Pro i7-6700T, CPU-only)        Elijah (AMD 12-core, GTX 1660 Ti)
-─────────────────────────────────        ──────────────────────────────────
-qwen3.5:2b  — primary                   qwen2.5-coder:64k — primary workhorse
-glm-ocr:q8_0 — vision/OCR test          qwen3-vl:8b — visual automation
-                                         hermes3:3b  — fast tool-call model
+                    ┌─────────────────────────────────────────────┐
+                    │              Claude Code CLI                 │
+                    │        (+ Chrome MCP extension)             │
+                    └───────────────────┬─────────────────────────┘
+                                        │  POST /v1/messages
+                                        ▼
+                    ┌─────────────────────────────────────────────┐
+                    │            CLAF FastAPI Proxy               │
+                    │          (orchestrator.py)                   │
+                    │                                             │
+                    │  ┌─────────────┐    ┌──────────────────┐    │
+                    │  │  Router     │───►│  Charter Inject  │    │
+                    │  │ (claf_)     │    │  (identity +     │    │
+                    │  │  config.py) │    │   task state)    │    │
+                    │  └──────┬──────┘    └──────────────────┘    │
+                    │         │                                   │
+                    │    ┌────┴────┐                                │
+                    │    ▼         ▼                                │
+                    │ LOCAL     CLOUD                               │
+                    │ (Tier 0) (Tier 1+)                           │
+                    └────┬─────────┬───────────────────────────────┘
+                         │         │
+                         ▼         ▼
+                   ┌──────────┐  ┌──────────────────────────────┐
+                   │  Ollama  │  │  Anthropic / OpenRouter /    │
+                   │ (local)  │  │  Groq / Cerebras / Fireworks  │
+                   └──────────┘  └──────────────────────────────┘
+
+    Routing signals: keywords, tool groups, task state, context size
+    Off-grid lock: local mode 423s any non-Ollama call (defense in depth)
 ```
 
 ---
 
-## Parity scorecard
+## Contributing
 
-`parity/test_parity.py` measures whether the local model produces cloud-equivalent outcomes across 5 layers:
+This is a personal off-grid tool, but suggestions and issue reports are welcome.
 
-| Layer | Question |
-|---|---|
-| ROUTING | Did hard tasks escalate? Did easy tasks stay local? |
-| CONTEXT | Did identity + operator's actual words survive the trim? |
-| CAPABILITY | Did tools reach local, and did tool calls parse back? |
-| BEHAVIOR | Act-first, show evidence, never fake "done"? |
-| TERMINATION | Stop when done, ask when stuck, no infinite loops? |
+1. Fork the repository.
+2. Create a feature branch: `git checkout -b my-feature`.
+3. Commit with clear messages: `git commit -m "feat(scope): description"`.
+4. Push and open a Pull Request.
 
-Current scores on Mary (qwen3.5:2b): ROUTING 9/9, TERMINATION 1/1, PARSER 4/4.
+Please do not add cloud-tier code paths that bypass the `off_grid` guard. The whole point is that `local` mode is unreachable to the network. New providers go in `_convenience_tiers()` only. Never hard-code API keys — env vars only.
 
 ---
 
-## Security
+## License
 
-- **Never commit `.env`** — it is gitignored. Cloud keys load from `~/.master_ai_keys` at runtime.
-- **Account separation enforced** — `ANTHROPIC_CONSOLE_KEY` (billing) and `ANTHROPIC_API_KEY` (API) must stay separate. A preflight hook blocks Bash/Edit/Write calls that would mix them.
-- **Off-grid lock** — even with cloud keys present, `local` mode returns 423 on any non-Ollama call.
+MIT © Elijah Wilkins. See [LICENSE](LICENSE) for full text.
 
 ---
 
-## Related
+## Author / Contact
+
+**Elijah Wilkins** — GitHub: [@ebey317](https://github.com/ebey317)
+
+Related projects:
 
 - **[master-ai](https://github.com/ebey317/master-ai)** — Local-first agent stack; Sensei terminal agent and Pupil browser UI
 - **[AI Controller](https://github.com/ebey317/-AI-controller.)** — Xbox controller → voice → desktop control

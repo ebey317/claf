@@ -14,6 +14,7 @@ Env:
     CLAF_LOG            default ~/projects/claf/orchestrator.log
     STRESS_MAX_TURN_S   per-turn wall-clock limit (default 60)
 """
+
 from __future__ import annotations
 import argparse
 import json
@@ -59,11 +60,25 @@ def _tool(name: str, props: dict, required: list[str], desc: str = "") -> dict:
 
 TOOLS = [
     _tool("Read", {"file_path": {"type": "string"}}, ["file_path"]),
-    _tool("Write", {"file_path": {"type": "string"}, "content": {"type": "string"}}, ["file_path", "content"]),
+    _tool(
+        "Write",
+        {"file_path": {"type": "string"}, "content": {"type": "string"}},
+        ["file_path", "content"],
+    ),
     _tool("Bash", {"command": {"type": "string"}}, ["command"]),
     _tool("mcp__email-bridge__list_accounts", {}, [], "list configured email accounts"),
-    _tool("mcp__email-bridge__check_inbox", {"account": {"type": "string"}}, ["account"], "check inbox"),
-    _tool("mcp__email-bridge__read_email", {"account": {"type": "string"}, "uid": {"type": "string"}}, ["account", "uid"], "read email"),
+    _tool(
+        "mcp__email-bridge__check_inbox",
+        {"account": {"type": "string"}},
+        ["account"],
+        "check inbox",
+    ),
+    _tool(
+        "mcp__email-bridge__read_email",
+        {"account": {"type": "string"}, "uid": {"type": "string"}},
+        ["account", "uid"],
+        "read email",
+    ),
     _tool("mcp__sensei__tab_create", {"url": {"type": "string"}}, ["url"], "open browser tab"),
     _tool("mcp__sensei__read_full", {}, [], "read full page DOM"),
     _tool("mcp__sensei__screenshot", {}, [], "screenshot the page"),
@@ -228,7 +243,10 @@ class Sandbox:
         if name == "mcp__sensei__tab_create":
             return {"type": "text", "text": f"tab opened: {args.get('url', '')}"}
         if name == "mcp__sensei__read_full":
-            return {"type": "text", "text": "<html><body><h1>Example</h1><p>page body</p></body></html>"}
+            return {
+                "type": "text",
+                "text": "<html><body><h1>Example</h1><p>page body</p></body></html>",
+            }
         if name == "mcp__sensei__screenshot":
             return {"type": "text", "text": "screenshot saved"}
         return self._error(f"unknown sensei tool: {name}")
@@ -241,7 +259,13 @@ class Sandbox:
 
 
 # ── scenario runner ─────────────────────────────────────────────────────────
-def run_scenario(scenario_id: str, spec_prompt: str, validator, known_fail: bool = False, max_loops: int = MAX_LOOPS) -> dict:
+def run_scenario(
+    scenario_id: str,
+    spec_prompt: str,
+    validator,
+    known_fail: bool = False,
+    max_loops: int = MAX_LOOPS,
+) -> dict:
     print(f"\n── SCENARIO {scenario_id} {'(KNOWN FAIL)' if known_fail else ''}──")
     # Clear any stale auto-seeded task so one scenario does not steer the next.
     _task_file = pathlib.Path.home() / ".claf" / "current_task.json"
@@ -274,11 +298,19 @@ def run_scenario(scenario_id: str, spec_prompt: str, validator, known_fail: bool
         try:
             resp = post(body)
             # Retry if overseer returns text-only. Long pause lets Cerebras 429 cool off.
-            tool_uses = [b for b in resp.get("content", []) or [] if isinstance(b, dict) and b.get("type") == "tool_use"]
+            tool_uses = [
+                b
+                for b in resp.get("content", []) or []
+                if isinstance(b, dict) and b.get("type") == "tool_use"
+            ]
             if not tool_uses:
                 time.sleep(15.0)
                 resp = post(body)
-                tool_uses = [b for b in resp.get("content", []) or [] if isinstance(b, dict) and b.get("type") == "tool_use"]
+                tool_uses = [
+                    b
+                    for b in resp.get("content", []) or []
+                    if isinstance(b, dict) and b.get("type") == "tool_use"
+                ]
         except Exception as e:
             sandbox.cleanup()
             return {
@@ -305,14 +337,25 @@ def run_scenario(scenario_id: str, spec_prompt: str, validator, known_fail: bool
             tool_use_id = tu.get("id", f"tu_{name}")
             result = sandbox.execute(tu)
             print(f"    <- {result.get('text', '')[:80]}")
-            messages.append({
-                "role": "assistant",
-                "content": [{"type": "tool_use", "id": tool_use_id, "name": name, "input": tu.get("input", {})}],
-            })
-            messages.append({
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": tool_use_id, **result}],
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": tool_use_id,
+                            "name": name,
+                            "input": tu.get("input", {}),
+                        }
+                    ],
+                }
+            )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": tool_use_id, **result}],
+                }
+            )
 
     # Wait a moment for turn_summary log lines to flush.
     time.sleep(0.5)
@@ -325,7 +368,9 @@ def run_scenario(scenario_id: str, spec_prompt: str, validator, known_fail: bool
         if total_ms > MAX_TURN_S * 1000:
             turn_failures.append(f"turn {s.get('turn_id')} too slow: {total_ms}ms")
         if s.get("redispatch_count", 0) > MAX_REDISPATCH:
-            turn_failures.append(f"turn {s.get('turn_id')} redispatch overflow: {s.get('redispatch_count')}")
+            turn_failures.append(
+                f"turn {s.get('turn_id')} redispatch overflow: {s.get('redispatch_count')}"
+            )
 
     tool_attempts = sum(1 for s in summaries if s.get("tool_use"))
     tool_valid = tool_attempts  # the orchestrator already validated the tool_use blocks it logged
@@ -462,9 +507,15 @@ def main():
         if not spec:
             print(f"unknown scenario: {sid}")
             continue
-        results.append(run_scenario(sid, spec["prompt"], spec["validator"],
-                                     spec.get("known_fail", False),
-                                     spec.get("max_loops", MAX_LOOPS)))
+        results.append(
+            run_scenario(
+                sid,
+                spec["prompt"],
+                spec["validator"],
+                spec.get("known_fail", False),
+                spec.get("max_loops", MAX_LOOPS),
+            )
+        )
 
     print("\n── SCOREBOARD ──")
     fails = 0

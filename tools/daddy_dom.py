@@ -21,6 +21,7 @@ Output JSON:
       ]
     }
 """
+
 import argparse
 import json
 import os

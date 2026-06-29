@@ -4,6 +4,7 @@
 Deterministic replacement for the LLM-driven email-summary path.
 Runs scan_thunderbird.py --summary --all and returns clean text.
 """
+
 import json
 import subprocess
 import sys

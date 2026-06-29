@@ -144,9 +144,20 @@ if _KEYS_FILE.exists():
 import sensei_supervisor as supervisor  # ReAct XML tool-call translator (off-grid MCP)
 from task_state import load_task, save_task, format_task_for_injection, task_belongs_to, TASK_FILE
 from claf_config import (
-    MODE, PROVIDERS, describe, select_provider, _is_hard_task, _is_action_turn,
-    _select_mode, TAP_TEMPLATES, detect_tap_intent, _flatten_prompt_text,
-    next_cloud_peer, pick_cloud_peer, select_local_tools, _EMAIL_SIGNALS,
+    MODE,
+    PROVIDERS,
+    describe,
+    select_provider,
+    _is_hard_task,
+    _is_action_turn,
+    _select_mode,
+    TAP_TEMPLATES,
+    detect_tap_intent,
+    _flatten_prompt_text,
+    next_cloud_peer,
+    pick_cloud_peer,
+    select_local_tools,
+    _EMAIL_SIGNALS,
     _matches_toolbox_command,
 )
 import claf_permissions
@@ -156,6 +167,7 @@ import threading
 
 try:
     from orchestrator_action_bridge import execute_actions_in_text
+
     HAS_ACTION_BRIDGE = True
 except Exception:
     HAS_ACTION_BRIDGE = False
@@ -172,15 +184,19 @@ _OLLAMA_KEEP_ALIVE = int(os.environ.get("CLAF_OLLAMA_KEEP_ALIVE", "-1"))
 
 
 PORT = int(os.environ.get("CLAF_PORT", "8000"))
-LOG_FILE = Path(os.environ.get("CLAF_LOG_FILE", str(Path.home() / "projects/claf/orchestrator.log")))
+LOG_FILE = Path(
+    os.environ.get("CLAF_LOG_FILE", str(Path.home() / "projects/claf/orchestrator.log"))
+)
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Persistent conversation log so operators can look back at what they asked
 # Mary/CLAF. One JSON line per turn, capturing user prompt + assistant reply.
-CONVERSATION_LOG_FILE = Path(os.environ.get(
-    "CLAF_CONVERSATION_LOG_FILE",
-    str(Path.home() / ".claf/conversation.log"),
-))
+CONVERSATION_LOG_FILE = Path(
+    os.environ.get(
+        "CLAF_CONVERSATION_LOG_FILE",
+        str(Path.home() / ".claf/conversation.log"),
+    )
+)
 CONVERSATION_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Runtime platform detection so every model knows which OS commands to use.
@@ -235,8 +251,12 @@ def _load_platform_capabilities() -> str:
             terms = caps.get("terminal_emulators", [])
             if terms:
                 lines.append(f"Available terminal emulators: {', '.join(terms)}")
-            lines.append("Use `xdg-open` (Linux), `open` (macOS), or `start` (Windows) to open files/URLs in the default desktop app.")
-            lines.append("If a needed command is missing, use Bash to install it via the native package manager.")
+            lines.append(
+                "Use `xdg-open` (Linux), `open` (macOS), or `start` (Windows) to open files/URLs in the default desktop app."
+            )
+            lines.append(
+                "If a needed command is missing, use Bash to install it via the native package manager."
+            )
             lines.append("Do not open `file://` URLs in the browser unless explicitly asked.")
             return "\n".join(lines)
     except Exception:
@@ -266,12 +286,15 @@ def _load_platform_capabilities() -> str:
             "`dir /s /b *<name>*`, `winget list | findstr <name>`. "
             "Do not open `file://` URLs in the browser unless explicitly asked."
         ),
-    }.get(_PLATFORM_SYSTEM, (
-        f"You are running on {_PLATFORM_SYSTEM} {_PLATFORM_RELEASE} ({_PLATFORM_MACHINE}). "
-        "Use the native terminal/shell commands for this operating system. "
-        "For local filesystem searches (apps, files, executables), prefer the terminal "
-        "over opening `file://` URLs in the browser."
-    ))
+    }.get(
+        _PLATFORM_SYSTEM,
+        (
+            f"You are running on {_PLATFORM_SYSTEM} {_PLATFORM_RELEASE} ({_PLATFORM_MACHINE}). "
+            "Use the native terminal/shell commands for this operating system. "
+            "For local filesystem searches (apps, files, executables), prefer the terminal "
+            "over opening `file://` URLs in the browser."
+        ),
+    )
 
 
 _PLATFORM_GUIDANCE = _load_platform_capabilities()
@@ -288,7 +311,7 @@ OLLAMA_URL = _LOCAL.url if _LOCAL else None
 #   CLAF_SPEED_MODEL   → short/simple text (no tools, ≤3 user msgs, ≤200 chars)
 #   CLAF_LOCAL_MODEL   → everything else (workhorse: code, tools, agents)
 VISION_MODEL = os.environ.get("CLAF_VISION_MODEL", "").strip() or None
-SPEED_MODEL  = os.environ.get("CLAF_SPEED_MODEL",  "").strip() or None
+SPEED_MODEL = os.environ.get("CLAF_SPEED_MODEL", "").strip() or None
 
 
 def _request_has_image(body: dict) -> bool:
@@ -311,8 +334,10 @@ def _request_is_simple(body: dict) -> bool:
     if len(user_msgs) > 3:
         return False
     last = user_msgs[-1].get("content", "") if user_msgs else ""
-    text = last if isinstance(last, str) else " ".join(
-        b.get("text", "") for b in last if isinstance(b, dict)
+    text = (
+        last
+        if isinstance(last, str)
+        else " ".join(b.get("text", "") for b in last if isinstance(b, dict))
     )
     return len(text) < 300
 
@@ -327,6 +352,7 @@ def select_local_model(body: dict) -> str:
     if VISION_MODEL and _request_has_image(body):
         return VISION_MODEL
     return LOCAL_MODEL
+
 
 app = FastAPI(title="CLAF orchestrator", version="0.4.0")
 
@@ -352,7 +378,9 @@ def log(event: str, **fields) -> None:
         f.write(json.dumps(entry) + "\n")
 
 
-def log_conversation(turn_id: str, role: str, content, model: str = None, provider: str = None) -> None:
+def log_conversation(
+    turn_id: str, role: str, content, model: str = None, provider: str = None
+) -> None:
     """Append a conversation turn line to the persistent conversation log.
 
     role is 'user' or 'assistant'. content is the raw content (string or list
@@ -404,13 +432,15 @@ def _record_dispatch(kind: str, provider, start: float, end: float) -> None:
     turn = _current_turn()
     if turn is None:
         return
-    turn["dispatches"].append({
-        "kind": kind,
-        "provider": getattr(provider, "name", "unknown"),
-        "model": getattr(provider, "model", "unknown"),
-        "start_ms": int((start - turn["t0"]) * 1000),
-        "end_ms": int((end - turn["t0"]) * 1000),
-    })
+    turn["dispatches"].append(
+        {
+            "kind": kind,
+            "provider": getattr(provider, "name", "unknown"),
+            "model": getattr(provider, "model", "unknown"),
+            "start_ms": int((start - turn["t0"]) * 1000),
+            "end_ms": int((end - turn["t0"]) * 1000),
+        }
+    )
 
 
 def _conv_fingerprint(msgs: list[dict]) -> str:
@@ -420,6 +450,7 @@ def _conv_fingerprint(msgs: list[dict]) -> str:
             c = m.get("content", "")
             text = c if isinstance(c, str) else json.dumps(c)
             import hashlib
+
             return hashlib.sha1(text[:256].encode("utf-8")).hexdigest()[:10]
     return "0000000000"
 
@@ -540,22 +571,43 @@ def _load_charter_slices(body: dict) -> str:
             slices.append(s)
 
     # Tasks slice: Task* tools present OR task words in prompt
-    _task_words = {"tasklist", "task list", "task", "backlog", "claim",
-                   "batch", "memory", "write a memory", "create a memory"}
-    if (any(n.startswith("Task") for n in tool_names)
-            or any(w in last_user for w in _task_words)):
+    _task_words = {
+        "tasklist",
+        "task list",
+        "task",
+        "backlog",
+        "claim",
+        "batch",
+        "memory",
+        "write a memory",
+        "create a memory",
+    }
+    if any(n.startswith("Task") for n in tool_names) or any(w in last_user for w in _task_words):
         s = _load_charter_slice("charter_tasks")
         if s:
             slices.append(s)
 
     # Debug slice: error signals in prompt or failed tool_results in history
-    _debug_words = {"error", "fail", "broken", "debug", "log", "not working",
-                    "why", "check log", "what went wrong", "diagnose"}
+    _debug_words = {
+        "error",
+        "fail",
+        "broken",
+        "debug",
+        "log",
+        "not working",
+        "why",
+        "check log",
+        "what went wrong",
+        "diagnose",
+    }
     _has_tool_error = any(
         isinstance(m.get("content"), list)
-        and any(isinstance(b, dict) and b.get("type") == "tool_result"
-                and b.get("is_error") for b in m["content"])
-        for m in body.get("messages", []) if m.get("role") == "user"
+        and any(
+            isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error")
+            for b in m["content"]
+        )
+        for m in body.get("messages", [])
+        if m.get("role") == "user"
     )
     if _has_tool_error or any(w in last_user for w in _debug_words):
         s = _load_charter_slice("charter_debug")
@@ -574,10 +626,12 @@ def _load_charter_slices(body: dict) -> str:
             "Never output mcp__, TaskList, Bash:, or command strings."
         )
 
-    log("charter_slices_selected",
+    log(
+        "charter_slices_selected",
         slices=[s[:20] for s in slices],
         total_chars=sum(len(s) for s in slices),
-        platform=_PLATFORM_SYSTEM)
+        platform=_PLATFORM_SYSTEM,
+    )
     return "\n\n---\n\n".join(slices) + "\n\n"
 
 
@@ -586,10 +640,12 @@ def _load_charter_slices(body: dict) -> str:
 # the primary agent does. The memory is what makes it personal; a subset is not
 # enough. Loaded from the memory dir, cached by newest-mtime so edits to any
 # memory file refresh the pack on the next request (no restart).
-_MEMORY_DIR = Path(os.environ.get(
-    "CLAF_MEMORY_DIR",
-    str(Path.home() / ".claude/projects/-home-elijah/memory"),
-))
+_MEMORY_DIR = Path(
+    os.environ.get(
+        "CLAF_MEMORY_DIR",
+        str(Path.home() / ".claude/projects/-home-elijah/memory"),
+    )
+)
 _memory_cache: dict = {"sig": None, "text": None, "checked_at": 0}
 
 
@@ -649,7 +705,10 @@ def _load_md_files() -> str:
     try:
         max_chars = int(os.environ.get("CLAF_MD_MAX_CHARS", "3000"))
         now = time.monotonic()
-        if now - _md_files_cache.get("checked_at", 0) < 2.0 and _md_files_cache.get("text") is not None:
+        if (
+            now - _md_files_cache.get("checked_at", 0) < 2.0
+            and _md_files_cache.get("text") is not None
+        ):
             return _md_files_cache["text"]
         files = sorted(_MD_FILES_DIR.glob("*.md"))
         if not files:
@@ -714,7 +773,9 @@ def flatten_anthropic_content(content) -> str:
             tool_id = block.get("tool_use_id", "?")
             inner = block.get("content", "")
             if isinstance(inner, list):
-                inner = "\n".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in inner)
+                inner = "\n".join(
+                    b.get("text", "") if isinstance(b, dict) else str(b) for b in inner
+                )
             parts.append(f"[Tool result for {tool_id}]:\n{inner}")
         elif btype == "image":
             # Image data forwarded separately via Ollama 'images' field.
@@ -753,9 +814,7 @@ def flatten_system(system) -> str:
     if isinstance(system, str):
         return system
     if isinstance(system, list):
-        return "\n".join(
-            b.get("text", "") if isinstance(b, dict) else str(b) for b in system
-        )
+        return "\n".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in system)
     return str(system)
 
 
@@ -779,16 +838,18 @@ def _anthropic_tools_to_ollama(tools: list[dict]) -> list[dict]:
     Ollama and OpenAI use the identical {type:function, function:{name,
     description, parameters}} schema, so this serves both paths."""
     out = []
-    for t in (tools or []):
+    for t in tools or []:
         schema = t.get("input_schema") or {}
-        out.append({
-            "type": "function",
-            "function": {
-                "name": t.get("name", ""),
-                "description": t.get("description", ""),
-                "parameters": schema,
-            },
-        })
+        out.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": t.get("name", ""),
+                    "description": t.get("description", ""),
+                    "parameters": schema,
+                },
+            }
+        )
     return out
 
 
@@ -814,14 +875,16 @@ def _tools_to_ollama_format(tools: list[dict]) -> dict:
         # JSON-schema validator does not choke on bare parameter lists.
         if schema.get("type") != "object":
             schema = {"type": "object", "properties": {}, "required": []}
-        one_of.append({
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "enum": [name]},
-                "arguments": schema,
-            },
-            "required": ["name", "arguments"],
-        })
+        one_of.append(
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "enum": [name]},
+                    "arguments": schema,
+                },
+                "required": ["name", "arguments"],
+            }
+        )
 
     if len(one_of) == 1:
         return one_of[0]
@@ -887,13 +950,16 @@ def messages_from_anthropic(claude_messages: list, flavor: str = "openai"):
                 inner = tr.get("content", "")
                 if isinstance(inner, list):
                     inner = "\n".join(
-                        x.get("text", "") if isinstance(x, dict) else str(x)
-                        for x in inner
+                        x.get("text", "") if isinstance(x, dict) else str(x) for x in inner
                     )
                 if flavor == "openai":
-                    out.append({"role": "tool",
-                                "tool_call_id": tr.get("tool_use_id", ""),
-                                "content": inner or ""})
+                    out.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tr.get("tool_use_id", ""),
+                            "content": inner or "",
+                        }
+                    )
                 else:
                     out.append({"role": "tool", "content": inner or ""})
             if text_joined:
@@ -906,21 +972,24 @@ def messages_from_anthropic(claude_messages: list, flavor: str = "openai"):
         # assistant message carrying tool_use → native tool_calls.
         if tool_use_blocks and role == "assistant":
             if flavor == "openai":
-                tcs = [{"id": tu.get("id", ""),
+                tcs = [
+                    {
+                        "id": tu.get("id", ""),
                         "type": "function",
-                        "function": {"name": tu.get("name", ""),
-                                     "arguments": json.dumps(tu.get("input", {}))}}
-                       for tu in tool_use_blocks]
-                out.append({"role": "assistant",
-                            "content": text_joined or None,
-                            "tool_calls": tcs})
+                        "function": {
+                            "name": tu.get("name", ""),
+                            "arguments": json.dumps(tu.get("input", {})),
+                        },
+                    }
+                    for tu in tool_use_blocks
+                ]
+                out.append({"role": "assistant", "content": text_joined or None, "tool_calls": tcs})
             else:
-                tcs = [{"function": {"name": tu.get("name", ""),
-                                     "arguments": tu.get("input", {})}}
-                       for tu in tool_use_blocks]
-                out.append({"role": "assistant",
-                            "content": text_joined or "",
-                            "tool_calls": tcs})
+                tcs = [
+                    {"function": {"name": tu.get("name", ""), "arguments": tu.get("input", {})}}
+                    for tu in tool_use_blocks
+                ]
+                out.append({"role": "assistant", "content": text_joined or "", "tool_calls": tcs})
             continue
 
         # Plain message (text, maybe images).
@@ -932,7 +1001,9 @@ def messages_from_anthropic(claude_messages: list, flavor: str = "openai"):
     return out
 
 
-def openai_tool_calls_to_anthropic(message: dict, available_tools: list[dict] | None = None) -> tuple[list[dict], bool]:
+def openai_tool_calls_to_anthropic(
+    message: dict, available_tools: list[dict] | None = None
+) -> tuple[list[dict], bool]:
     """OpenAI choices[0].message → Anthropic content blocks.
     OpenAI returns tool-call arguments as a JSON STRING. Returns
     (content_blocks, tool_use_bool)."""
@@ -963,14 +1034,16 @@ def openai_tool_calls_to_anthropic(message: dict, available_tools: list[dict] | 
         _recovered: list[dict] = []
         for _m in _fn_re.finditer(text):
             try:
-                _recovered.append({
-                    "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
-                    "type": "function",
-                    "function": {
-                        "name": _m.group(1),
-                        "arguments": json.loads(_m.group(2).strip()),
-                    },
-                })
+                _recovered.append(
+                    {
+                        "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                        "type": "function",
+                        "function": {
+                            "name": _m.group(1),
+                            "arguments": json.loads(_m.group(2).strip()),
+                        },
+                    }
+                )
             except Exception:
                 pass
         if _recovered:
@@ -989,12 +1062,14 @@ def openai_tool_calls_to_anthropic(message: dict, available_tools: list[dict] | 
                 args = {}
         else:
             args = raw_args or {}
-        blocks.append({
-            "type": "tool_use",
-            "id": tc.get("id") or f"toolu_claf_{uuid.uuid4().hex[:24]}",
-            "name": fn.get("name", ""),
-            "input": args,
-        })
+        blocks.append(
+            {
+                "type": "tool_use",
+                "id": tc.get("id") or f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                "name": fn.get("name", ""),
+                "input": args,
+            }
+        )
     if not blocks:
         blocks = [{"type": "text", "text": ""}]
     return blocks, bool(tool_calls)
@@ -1018,18 +1093,22 @@ def ollama_tool_calls_to_anthropic(message: dict) -> tuple[list[dict], bool]:
                 args = {}
         elif not isinstance(args, dict):
             args = {}
-        blocks.append({
-            "type": "tool_use",
-            "id": tc.get("id") or f"toolu_claf_{uuid.uuid4().hex[:24]}",
-            "name": fn.get("name", ""),
-            "input": args,
-        })
+        blocks.append(
+            {
+                "type": "tool_use",
+                "id": tc.get("id") or f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                "name": fn.get("name", ""),
+                "input": args,
+            }
+        )
     if not blocks:
         blocks = [{"type": "text", "text": ""}]
     return blocks, bool(tool_calls)
 
 
-def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None = None) -> list[dict]:
+def _repair_malformed_tool_json(
+    text: str, tools: list[dict], model: str | None = None
+) -> list[dict]:
     """Recover tool calls from models that emit tool JSON as text but with
     syntax errors (e.g. hermes3:3b on CPU). Looks for JSON-like objects with
     'name' and 'arguments' keys, fixes common quoting mistakes, validates
@@ -1037,6 +1116,7 @@ def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None 
     format."""
     import json as _json
     import ast as _ast
+
     if not text or not tools:
         return []
     available = {t.get("name"): t for t in tools if t.get("name")}
@@ -1059,7 +1139,7 @@ def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None 
 
     def _fix_json_text(raw: str) -> str:
         # Strip markdown ```json ... ``` fences.
-        fenced = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw)
+        fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
         if fenced:
             raw = fenced.group(1)
         # Balanced single-quote -> double-quote swap for dict bodies.
@@ -1067,11 +1147,11 @@ def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None 
         if "'" in raw and raw.count("'") % 2 == 0 and raw.count('"') == 0:
             raw = raw.replace("'", '"')
         # Remove trailing commas before } or ].
-        raw = re.sub(r',(\s*[}\]])', r'\1', raw)
+        raw = re.sub(r",(\s*[}\]])", r"\1", raw)
         # Normalize weirdly-spaced quoted keys: " name": -> "name":
         fixed = re.sub(r'([{,]\s*)"\s*(\w+)\s*"(\s*:)', r'\1"\2"\3', raw)
         # Fix unquoted keys like {name: ...}.
-        fixed = re.sub(r'([{,]\s*)(\w+)(\s*:)', r'\1"\2"\3', fixed)
+        fixed = re.sub(r"([{,]\s*)(\w+)(\s*:)", r'\1"\2"\3', fixed)
         # Fix "name: ..." where the opening quote before the key is never closed.
         fixed = re.sub(r'["\'](\w+)(\s*:)', r'"\1":', fixed)
         # Fix missing closing quote on string values: "foo} -> "foo"}
@@ -1080,7 +1160,7 @@ def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None 
         fixed = re.sub(r"(:\s*)'([^']*)'", r'\1"\2"', fixed)
         return fixed
 
-    for match in re.finditer(r'\{(?:[^{}]|\{[^{}]*\})*\}', text, re.DOTALL):
+    for match in re.finditer(r"\{(?:[^{}]|\{[^{}]*\})*\}", text, re.DOTALL):
         cand = match.group(0)
         data = _try_json_loads(cand)
         if data is None:
@@ -1104,7 +1184,7 @@ def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None 
         args = data.get("arguments") or data.get("input") or data.get("parameters") or {}
         if not name or not isinstance(name, str):
             continue
-        name = name.split()[0].strip('"\'')
+        name = name.split()[0].strip("\"'")
         if name not in available:
             continue
         saw_known_tool = True
@@ -1134,7 +1214,7 @@ def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None 
                         # Case 2: "file_path content" shorthand
                         parts = s.split(None, 1)
                         if len(parts) == 2:
-                            content = parts[1].strip("\'") if parts[1].startswith("'") else parts[1]
+                            content = parts[1].strip("'") if parts[1].startswith("'") else parts[1]
                             args = {"file_path": parts[0], "content": content}
                         else:
                             args = {"file_path": parts[0], "content": ""} if parts else {}
@@ -1161,8 +1241,9 @@ def _repair_malformed_tool_json(text: str, tools: list[dict], model: str | None 
     return repaired
 
 
-def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
-                max_tokens: int | None = None) -> tuple[list[dict], dict, bool]:
+def ollama_chat(
+    provider, messages: list[dict], tools: list[dict] | None = None, max_tokens: int | None = None
+) -> tuple[list[dict], dict, bool]:
     """Ollama chat — local AND cloud, unified. Sends native tools when present
     (both fast-agent:latest and qwen3-coder:480b-cloud support them) and reads
     tool_calls back as Anthropic tool_use blocks. No more XML round-trip, no
@@ -1181,7 +1262,14 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
         cap = int(os.environ.get("CLAF_LOCAL_MAX_PREDICT", "512"))
         num_predict = min(max_tokens or cap, cap)
 
-    THINKING_MODELS = {"qwen3.5:2b", "qwen3.5:9b", "qwen3:8b", "qwen3:14b", "qwen3:30b", "qwen3:32b"}
+    THINKING_MODELS = {
+        "qwen3.5:2b",
+        "qwen3.5:9b",
+        "qwen3:8b",
+        "qwen3:14b",
+        "qwen3:30b",
+        "qwen3:32b",
+    }
     # Thinking budget tiers: light=512 medium=1024 heavy=2048 extra=4096 tokens
     THINK_BUDGETS = {"light": 512, "medium": 1024, "heavy": 2048, "extra": 4096}
     think_level = os.environ.get("CLAF_THINK_LEVEL", "medium").strip().lower()
@@ -1202,9 +1290,15 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
         # Keep the local model pinned in RAM. Without this, each request resets
         # ollama's keep_alive to the 5m default — overriding the prewarm pin —
         # and any idle gap >5m costs a ~3.6s model reload on the next turn.
-        payload["keep_alive"] = _OLLAMA_KEEP_ALIVE  # default -1; override via CLAF_OLLAMA_KEEP_ALIVE
+        payload["keep_alive"] = (
+            _OLLAMA_KEEP_ALIVE  # default -1; override via CLAF_OLLAMA_KEEP_ALIVE
+        )
     if provider.model in THINKING_MODELS:
-        if think_level == "none" or bool(tools) or _request_is_simple({"tools": tools, "messages": messages}):
+        if (
+            think_level == "none"
+            or bool(tools)
+            or _request_is_simple({"tools": tools, "messages": messages})
+        ):
             # thinking disabled, execution mode, or simple chat — thinking off
             payload["think"] = False
         else:
@@ -1217,11 +1311,7 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
     # Mechanical output enforcement: small local models hallucinate tool names and
     # argument shapes unless the token sampler is masked. Ollama's `format` field
     # accepts a JSON schema; use it only for local requests when enabled.
-    _constrained = (
-        not is_cloud
-        and tools
-        and os.environ.get("CLAF_LOCAL_CONSTRAINED", "0") == "1"
-    )
+    _constrained = not is_cloud and tools and os.environ.get("CLAF_LOCAL_CONSTRAINED", "0") == "1"
     if _constrained:
         payload["format"] = _tools_to_ollama_format(tools)
 
@@ -1254,20 +1344,26 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
         # Inject the exact next pending item as a user message — local 2B models
         # attend better to a concrete user instruction than to a system suffix.
         if _task and _task.get("auto"):
-            _pending_items = [it for it in _task.get("items", [])
-                              if isinstance(it, dict) and it.get("status", "pending") == "pending"]
+            _pending_items = [
+                it
+                for it in _task.get("items", [])
+                if isinstance(it, dict) and it.get("status", "pending") == "pending"
+            ]
             if _pending_items:
                 _next = _pending_items[0]
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "NEXT PENDING ITEM: " + _next.get("task", "")
-                        + ". MANDATORY: emit exactly ONE tool call for this item "
-                        "RIGHT NOW. Do NOT reply with prose, summary, or status. "
-                        "If this item is done, update ~/.claf/current_task.json first, "
-                        "then emit the tool call for the next item in the SAME turn."
-                    ),
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "NEXT PENDING ITEM: "
+                            + _next.get("task", "")
+                            + ". MANDATORY: emit exactly ONE tool call for this item "
+                            "RIGHT NOW. Do NOT reply with prose, summary, or status. "
+                            "If this item is done, update ~/.claf/current_task.json first, "
+                            "then emit the tool call for the next item in the SAME turn."
+                        ),
+                    }
+                )
         if _task_pending_count() > 0:
             extras.append(
                 "MANDATORY TASK DISCIPLINE: An active task has pending items. "
@@ -1281,17 +1377,21 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
     # Debug: log actual payload sizes going to Ollama so we can diagnose
     # why prompt_eval_count hits CTX even after trimming.
     if not is_cloud:
-        _msg_sizes = [{"role": m.get("role"), "chars": len(str(m.get("content","")))} for m in messages]
-        log("ollama_payload_debug",
+        _msg_sizes = [
+            {"role": m.get("role"), "chars": len(str(m.get("content", "")))} for m in messages
+        ]
+        log(
+            "ollama_payload_debug",
             msg_count=len(messages),
             tool_count=len(tools) if tools else 0,
             msg_sizes=_msg_sizes,
             total_msg_chars=sum(s["chars"] for s in _msg_sizes),
             num_ctx=num_ctx,
-            num_predict=num_predict)
+            num_predict=num_predict,
+        )
 
     lock = _OLLAMA_CLOUD_LOCK if is_cloud else None
-    with (lock if lock else contextlib.nullcontext()):
+    with lock if lock else contextlib.nullcontext():
         with httpx.Client(timeout=300.0) as client:
             r = client.post(provider.url, json=payload)
             # One-time fallback: if Ollama rejects the constrained format schema,
@@ -1302,7 +1402,11 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
                     err_body = r.text
                 except Exception:
                     err_body = ""
-                if "format" in err_body.lower() or "schema" in err_body.lower() or "json" in err_body.lower():
+                if (
+                    "format" in err_body.lower()
+                    or "schema" in err_body.lower()
+                    or "json" in err_body.lower()
+                ):
                     log("ollama_format_rejected", model=provider.model, error=err_body[:200])
                     payload.pop("format", None)
                     r = client.post(provider.url, json=payload)
@@ -1321,12 +1425,14 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
         try:
             parsed = json.loads(content_text.strip())
             if isinstance(parsed, dict) and "name" in parsed and "arguments" in parsed:
-                tool_calls = [{
-                    "function": {
-                        "name": parsed["name"],
-                        "arguments": parsed["arguments"],
+                tool_calls = [
+                    {
+                        "function": {
+                            "name": parsed["name"],
+                            "arguments": parsed["arguments"],
+                        }
                     }
-                }]
+                ]
                 log("tool_call_from_format", name=parsed["name"], model=provider.model)
         except Exception:
             pass
@@ -1345,12 +1451,13 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
     # [Tool call: name({...})] instead of native tool_calls. Recover those.
     # Only run when tools were actually sent, otherwise prose gets mis-parsed.
     if not tool_calls and content_text and tools:
-        _tc_pat = re.compile(r'\[Tool [Cc]all:\s*(\w+)\((\{.*?\})\)\]', re.DOTALL)
+        _tc_pat = re.compile(r"\[Tool [Cc]all:\s*(\w+)\((\{.*?\})\)\]", re.DOTALL)
         recovered = []
         for m2 in _tc_pat.finditer(content_text):
             try:
-                recovered.append({"function": {"name": m2.group(1),
-                                                "arguments": json.loads(m2.group(2))}})
+                recovered.append(
+                    {"function": {"name": m2.group(1), "arguments": json.loads(m2.group(2))}}
+                )
             except Exception:
                 pass
         if recovered:
@@ -1377,7 +1484,9 @@ def ollama_chat(provider, messages: list[dict], tools: list[dict] | None = None,
     return [{"type": "text", "text": content_text}], usage, False
 
 
-def openai_compat_chat(provider, messages: list[dict], tools: list[dict] | None = None) -> tuple[list[dict], dict, bool]:
+def openai_compat_chat(
+    provider, messages: list[dict], tools: list[dict] | None = None
+) -> tuple[list[dict], dict, bool]:
     """OpenAI-compatible chat completions (Groq / Cerebras / Fireworks /
     OpenRouter). Sends native tools when present and reads tool_calls back as
     Anthropic tool_use blocks. Returns (content_blocks, usage, tool_use_bool)."""
@@ -1394,18 +1503,34 @@ def openai_compat_chat(provider, messages: list[dict], tools: list[dict] | None 
     if tools:
         payload["tools"] = _anthropic_tools_to_ollama(tools)  # OpenAI == Ollama tool schema
         payload["tool_choice"] = "auto"
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {key.strip()}", "Content-Type": "application/json"}
+    # OpenRouter requires/appends these headers for proper request routing and
+    # site attribution; without them it can return 401/403 on some keys.
+    if provider.name == "openrouter":
+        headers.setdefault("HTTP-Referer", "https://claf.local")
+        headers.setdefault("X-Title", "CLAF")
     # Body size is the 413 signal — log it so payload-too-large is diagnosable
     # without guessing. Cloud free tiers (groq ~30KB) reject oversized bodies.
     _body_bytes = len(json.dumps(payload).encode("utf-8"))
-    log("cloud_request_size", provider=provider.name, body_bytes=_body_bytes,
-        tool_count=len(tools) if tools else 0, msg_count=len(messages))
+    log(
+        "cloud_request_size",
+        provider=provider.name,
+        body_bytes=_body_bytes,
+        tool_count=len(tools) if tools else 0,
+        msg_count=len(messages),
+    )
     with httpx.Client(timeout=120.0) as client:
         r = client.post(provider.url, json=payload, headers=headers)
         if not r.is_success:
-            log("cloud_provider_error", provider=provider.name, model=provider.model,
-                status=r.status_code, error_body=r.text[:800],
-                payload_keys=list(payload.keys()), tool_count=len(tools) if tools else 0)
+            log(
+                "cloud_provider_error",
+                provider=provider.name,
+                model=provider.model,
+                status=r.status_code,
+                error_body=r.text[:800],
+                payload_keys=list(payload.keys()),
+                tool_count=len(tools) if tools else 0,
+            )
         r.raise_for_status()
         data = r.json()
     message = data["choices"][0]["message"]
@@ -1458,12 +1583,19 @@ def anthropic_direct_chat(provider, body: dict) -> tuple[list, dict]:
     with httpx.Client(timeout=300.0) as client:
         r = client.post(provider.url, json=payload, headers=headers)
         if not r.is_success:
-            log("anthropic_direct_error", status=r.status_code,
+            log(
+                "anthropic_direct_error",
+                status=r.status_code,
                 error_body=r.text[:500],
                 payload_keys=list(payload.keys()),
                 betas=payload.get("betas"),
-                thinking_type=payload.get("thinking", {}).get("type") if isinstance(payload.get("thinking"), dict) else payload.get("thinking"),
-                tool_count=len(payload.get("tools") or []))
+                thinking_type=(
+                    payload.get("thinking", {}).get("type")
+                    if isinstance(payload.get("thinking"), dict)
+                    else payload.get("thinking")
+                ),
+                tool_count=len(payload.get("tools") or []),
+            )
         r.raise_for_status()
         data = r.json()
     # Anthropic returns native content blocks (text + tool_use); pass them
@@ -1475,17 +1607,20 @@ def anthropic_direct_chat(provider, body: dict) -> tuple[list, dict]:
     }
     # Warn when Anthropic returns a suspiciously empty response (1-token /
     # 0-char) so the root cause is visible in the log rather than silent.
-    _out_text = "".join(b.get("text", "") for b in content_blocks
-                        if isinstance(b, dict) and b.get("type") == "text")
+    _out_text = "".join(
+        b.get("text", "") for b in content_blocks if isinstance(b, dict) and b.get("type") == "text"
+    )
     if usage["output_tokens"] <= 2 and not _out_text:
-        log("anthropic_empty_response",
+        log(
+            "anthropic_empty_response",
             output_tokens=usage["output_tokens"],
             stop_reason=data.get("stop_reason"),
             content_block_types=[b.get("type") for b in content_blocks if isinstance(b, dict)],
             max_tokens_sent=payload.get("max_tokens"),
             model=payload.get("model"),
             tool_count=len(payload.get("tools") or []),
-            message_count=len(payload.get("messages") or []))
+            message_count=len(payload.get("messages") or []),
+        )
     return content_blocks, usage
 
 
@@ -1587,6 +1722,7 @@ def _find_funccalls(text: str) -> list[tuple[int, int, str, str]]:
         out.append((m.start(), end_idx, m.group(1), args_raw))
     return out
 
+
 # Parse "key='value'" / 'key="value"' / 'key=123' inside a funccall arg string.
 _KV_PATTERN = re.compile(
     r"""
@@ -1636,7 +1772,11 @@ def _kv_args(raw: str) -> dict:
     out: dict = {}
     for m in _KV_PATTERN.finditer(raw or ""):
         key = m.group(1)
-        val = m.group(2) if m.group(2) is not None else (m.group(3) if m.group(3) is not None else m.group(4))
+        val = (
+            m.group(2)
+            if m.group(2) is not None
+            else (m.group(3) if m.group(3) is not None else m.group(4))
+        )
         if val is None:
             continue
         # unescape backslash sequences for quoted values
@@ -1787,15 +1927,18 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
             _fargs = json.loads(_fargs_raw) if _fargs_raw else {}
         except Exception:
             continue
-        found.append((
-            _m.start(), _m.end(),
-            {
-                "type": "tool_use",
-                "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
-                "name": _tool["name"],
-                "input": _fargs,
-            },
-        ))
+        found.append(
+            (
+                _m.start(),
+                _m.end(),
+                {
+                    "type": "tool_use",
+                    "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                    "name": _tool["name"],
+                    "input": _fargs,
+                },
+            )
+        )
 
     # Pass 5: bare "TOOL key=value ..." with NO parens. Cloud-backup peers
     # (groq, gpt-oss-120b) emit tool calls as plain text when native tool_calls
@@ -1806,7 +1949,8 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
     # prose like "x = 5" from false-matching — the first token must resolve to a
     # real tool. De-dup at the end drops overlap with the paren form (Pass 2).
     _BARE_KV_LINE = re.compile(
-        r"^[ \t]*([A-Za-z_][A-Za-z0-9_.:-]*)[ \t]+(\S+[ \t]*=.*\S)[ \t]*$", re.M)
+        r"^[ \t]*([A-Za-z_][A-Za-z0-9_.:-]*)[ \t]+(\S+[ \t]*=.*\S)[ \t]*$", re.M
+    )
     for _bm in _BARE_KV_LINE.finditer(text):
         _bname, _bargs = _bm.group(1), _bm.group(2)
         _btool = _find_tool(available_tools, _bname)
@@ -1815,15 +1959,18 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
         _bkv = _kv_args(_bargs)
         if not _bkv:
             continue
-        found.append((
-            _bm.start(), _bm.end(),
-            {
-                "type": "tool_use",
-                "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
-                "name": _btool["name"],
-                "input": _bkv,
-            },
-        ))
+        found.append(
+            (
+                _bm.start(),
+                _bm.end(),
+                {
+                    "type": "tool_use",
+                    "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                    "name": _btool["name"],
+                    "input": _bkv,
+                },
+            )
+        )
 
     # Pass 6: bare JSON tool-call objects in text, e.g.
     # {"name": "mcp__sensei__screenshot", "arguments": {...}}
@@ -1845,19 +1992,28 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
         _jtool = _find_tool(available_tools, _jname) if isinstance(_jname, str) else None
         if not _jtool:
             continue
-        _jargs = next((_jobj[k] for k in ("arguments", "parameters", "input")
-                       if isinstance(_jobj.get(k), dict)), {})
+        _jargs = next(
+            (
+                _jobj[k]
+                for k in ("arguments", "parameters", "input")
+                if isinstance(_jobj.get(k), dict)
+            ),
+            {},
+        )
         # Hermes emits placeholder {"": ""} when it has no args — strip empties.
         _jargs = {k: v for k, v in _jargs.items() if k}
-        found.append((
-            _jstart, _jstart + _jconsumed,
-            {
-                "type": "tool_use",
-                "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
-                "name": _jtool["name"],
-                "input": _jargs,
-            },
-        ))
+        found.append(
+            (
+                _jstart,
+                _jstart + _jconsumed,
+                {
+                    "type": "tool_use",
+                    "id": f"toolu_claf_{uuid.uuid4().hex[:24]}",
+                    "name": _jtool["name"],
+                    "input": _jargs,
+                },
+            )
+        )
 
     if not found:
         return [{"type": "text", "text": text}], False
@@ -1888,7 +2044,9 @@ def parse_directives_to_content(text: str, available_tools: list) -> tuple[list[
     return blocks, True
 
 
-def wrap_anthropic_response(model_id: str, content_blocks: list, usage: dict, tool_use: bool) -> dict:
+def wrap_anthropic_response(
+    model_id: str, content_blocks: list, usage: dict, tool_use: bool
+) -> dict:
     return {
         "id": f"msg_claf_{uuid.uuid4().hex[:24]}",
         "type": "message",
@@ -1901,18 +2059,20 @@ def wrap_anthropic_response(model_id: str, content_blocks: list, usage: dict, to
     }
 
 
-
 # ─── OpenAI-compatible conversion helpers ────────────────────────────────────
+
 
 def _openai_tools_to_anthropic(tools: list) -> list:
     out = []
     for t in tools or []:
         fn = t.get("function", {}) or {}
-        out.append({
-            "name": fn.get("name", ""),
-            "description": fn.get("description", ""),
-            "input_schema": fn.get("parameters", {}) or {},
-        })
+        out.append(
+            {
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters", {}) or {},
+            }
+        )
     return out
 
 
@@ -1935,32 +2095,40 @@ def _anthropic_to_openai(anthropic_resp: dict, model: str) -> dict:
         if isinstance(b, dict) and b.get("type") == "text":
             text_parts.append(b.get("text", ""))
         elif isinstance(b, dict) and b.get("type") == "tool_use":
-            tool_calls.append({
-                "id": b.get("id", ""),
-                "type": "function",
-                "function": {
-                    "name": b.get("name", ""),
-                    "arguments": json.dumps(b.get("input", {}) or {}),
-                },
-            })
+            tool_calls.append(
+                {
+                    "id": b.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": b.get("name", ""),
+                        "arguments": json.dumps(b.get("input", {}) or {}),
+                    },
+                }
+            )
     text = "".join(text_parts)
     stop_reason = anthropic_resp.get("stop_reason", "end_turn")
-    finish_reason = "stop" if stop_reason == "end_turn" else "tool_calls" if stop_reason == "tool_use" else stop_reason
+    finish_reason = (
+        "stop"
+        if stop_reason == "end_turn"
+        else "tool_calls" if stop_reason == "tool_use" else stop_reason
+    )
     usage = anthropic_resp.get("usage", {}) or {}
     return {
         "id": f"chatcmpl_{uuid.uuid4().hex[:24]}",
         "object": "chat.completion",
         "created": int(time.time()),
         "model": model,
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": text or None,
-                "tool_calls": tool_calls if tool_calls else None,
-            },
-            "finish_reason": finish_reason,
-        }],
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": text or None,
+                    "tool_calls": tool_calls if tool_calls else None,
+                },
+                "finish_reason": finish_reason,
+            }
+        ],
         "usage": {
             "prompt_tokens": usage.get("input_tokens", 0),
             "completion_tokens": usage.get("output_tokens", 0),
@@ -1968,9 +2136,15 @@ def _anthropic_to_openai(anthropic_resp: dict, model: str) -> dict:
         },
     }
 
+
 @app.get("/")
 def root():
-    return {"name": "claf-orchestrator", "version": "0.4.0", "local_model": LOCAL_MODEL, "mode": MODE}
+    return {
+        "name": "claf-orchestrator",
+        "version": "0.4.0",
+        "local_model": LOCAL_MODEL,
+        "mode": MODE,
+    }
 
 
 @app.get("/healthz")
@@ -2009,7 +2183,9 @@ def stats():
                     continue
                 tier = str(e.get("tier", "?"))
                 name = e.get("name", "?")
-                slot = by_tier.setdefault(tier, {"name": name, "calls": 0, "input_tokens": 0, "output_tokens": 0})
+                slot = by_tier.setdefault(
+                    tier, {"name": name, "calls": 0, "input_tokens": 0, "output_tokens": 0}
+                )
                 slot["calls"] += 1
                 slot["input_tokens"] += int(e.get("input_tokens") or 0)
                 slot["output_tokens"] += int(e.get("output_tokens") or 0)
@@ -2043,9 +2219,13 @@ def list_models():
     Advertise the common Claude model IDs so Claude Code's startup validation
     passes, plus the actual local model name for direct callers."""
     common_claude_ids = [
-        "claude-opus-4-7", "claude-opus-4-7[1m]",
-        "claude-opus-4-6", "claude-opus-4-5",
-        "claude-sonnet-4-7", "claude-sonnet-4-6", "claude-sonnet-4-5",
+        "claude-opus-4-7",
+        "claude-opus-4-7[1m]",
+        "claude-opus-4-6",
+        "claude-opus-4-5",
+        "claude-sonnet-4-7",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-5",
         "claude-haiku-4-5",
     ]
     seen: set[str] = set()
@@ -2057,14 +2237,16 @@ def list_models():
         if mid in seen:
             continue
         seen.add(mid)
-        data.append({
-            "id": mid,
-            "type": "model",
-            "display_name": (
-                f"local:{mid}" if mid == LOCAL_MODEL else f"claf:{mid} (→ {routed_label})"
-            ),
-            "created_at": "2026-05-19T00:00:00Z",
-        })
+        data.append(
+            {
+                "id": mid,
+                "type": "model",
+                "display_name": (
+                    f"local:{mid}" if mid == LOCAL_MODEL else f"claf:{mid} (→ {routed_label})"
+                ),
+                "created_at": "2026-05-19T00:00:00Z",
+            }
+        )
 
     return {"object": "list", "data": data}
 
@@ -2082,7 +2264,10 @@ async def chat_completions(request: Request):
 
     # Build messages
     system_text = flatten_system(anthropic_body.get("system"))
-    _msgs = messages_from_anthropic(anthropic_body.get("messages", []), flavor="ollama" if provider.kind == "ollama" else "openai")
+    _msgs = messages_from_anthropic(
+        anthropic_body.get("messages", []),
+        flavor="ollama" if provider.kind == "ollama" else "openai",
+    )
     if system_text:
         _msgs.insert(0, {"role": "system", "content": system_text})
 
@@ -2102,12 +2287,18 @@ async def chat_completions(request: Request):
 
         # Action bridge: auto-execute directives in text responses
         if HAS_ACTION_BRIDGE and not _tool_use:
-            _text = "".join(b.get("text", "") for b in _blocks if isinstance(b, dict) and b.get("type") == "text")
+            _text = "".join(
+                b.get("text", "")
+                for b in _blocks
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
             if _text:
                 _new_text = execute_actions_in_text(_text)
                 if _new_text != _text:
                     # Replace the text block with the augmented version
-                    _blocks = [{"type": "text", "text": _new_text}] + [b for b in _blocks if not (isinstance(b, dict) and b.get("type") == "text")]
+                    _blocks = [{"type": "text", "text": _new_text}] + [
+                        b for b in _blocks if not (isinstance(b, dict) and b.get("type") == "text")
+                    ]
 
         anthropic_resp = wrap_anthropic_response(requested_model, _blocks, _usage, _tool_use)
     except Exception as e:
@@ -2140,66 +2331,87 @@ def _sse_events(response: dict):
     def _event(name: str, data: dict) -> str:
         return f"event: {name}\ndata: {json.dumps(data)}\n\n"
 
-    yield _event("message_start", {
-        "type": "message_start",
-        "message": {
-            "id": msg_id,
-            "type": "message",
-            "role": "assistant",
-            "content": [],
-            "model": model,
-            "stop_reason": None,
-            "stop_sequence": None,
-            "usage": {
-                "input_tokens": usage.get("input_tokens", 0),
-                "output_tokens": 0,
+    yield _event(
+        "message_start",
+        {
+            "type": "message_start",
+            "message": {
+                "id": msg_id,
+                "type": "message",
+                "role": "assistant",
+                "content": [],
+                "model": model,
+                "stop_reason": None,
+                "stop_sequence": None,
+                "usage": {
+                    "input_tokens": usage.get("input_tokens", 0),
+                    "output_tokens": 0,
+                },
             },
         },
-    })
+    )
     yield _event("ping", {"type": "ping"})
 
     for i, block in enumerate(content_blocks):
         btype = block.get("type", "text")
         if btype == "text":
-            yield _event("content_block_start", {
-                "type": "content_block_start",
-                "index": i,
-                "content_block": {"type": "text", "text": ""},
-            })
-            yield _event("content_block_delta", {
-                "type": "content_block_delta",
-                "index": i,
-                "delta": {"type": "text_delta", "text": block.get("text", "")},
-            })
+            yield _event(
+                "content_block_start",
+                {
+                    "type": "content_block_start",
+                    "index": i,
+                    "content_block": {"type": "text", "text": ""},
+                },
+            )
+            yield _event(
+                "content_block_delta",
+                {
+                    "type": "content_block_delta",
+                    "index": i,
+                    "delta": {"type": "text_delta", "text": block.get("text", "")},
+                },
+            )
         elif btype == "tool_use":
-            yield _event("content_block_start", {
-                "type": "content_block_start",
-                "index": i,
-                "content_block": {
-                    "type": "tool_use",
-                    "id": block.get("id", f"toolu_{uuid.uuid4().hex[:24]}"),
-                    "name": block.get("name", ""),
-                    "input": {},
+            yield _event(
+                "content_block_start",
+                {
+                    "type": "content_block_start",
+                    "index": i,
+                    "content_block": {
+                        "type": "tool_use",
+                        "id": block.get("id", f"toolu_{uuid.uuid4().hex[:24]}"),
+                        "name": block.get("name", ""),
+                        "input": {},
+                    },
                 },
-            })
-            yield _event("content_block_delta", {
-                "type": "content_block_delta",
-                "index": i,
-                "delta": {
-                    "type": "input_json_delta",
-                    "partial_json": json.dumps(block.get("input", {}) or {}),
+            )
+            yield _event(
+                "content_block_delta",
+                {
+                    "type": "content_block_delta",
+                    "index": i,
+                    "delta": {
+                        "type": "input_json_delta",
+                        "partial_json": json.dumps(block.get("input", {}) or {}),
+                    },
                 },
-            })
-        yield _event("content_block_stop", {
-            "type": "content_block_stop",
-            "index": i,
-        })
+            )
+        yield _event(
+            "content_block_stop",
+            {
+                "type": "content_block_stop",
+                "index": i,
+            },
+        )
 
-    yield _event("message_delta", {
-        "type": "message_delta",
-        "delta": {"stop_reason": stop_reason, "stop_sequence": stop_sequence},
-        "usage": {"output_tokens": usage.get("output_tokens", 0)},
-    })
+    yield _event(
+        "message_delta",
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": stop_reason, "stop_sequence": stop_sequence},
+            "usage": {"output_tokens": usage.get("output_tokens", 0)},
+        },
+    )
     yield _event("message_stop", {"type": "message_stop"})
 
 
@@ -2233,7 +2445,9 @@ def _do_tap_polish(body: dict, draft_text: str) -> str:
     prompt_text = _flatten_prompt_text(body)
     intent = detect_tap_intent(prompt_text)
     template = TAP_TEMPLATES.get(intent, TAP_TEMPLATES["generic"])
-    polish_prompt = template.format(snippet=f"INTENT: {prompt_text[:300]}\n\nDRAFT:\n```\n{snippet}\n```")
+    polish_prompt = template.format(
+        snippet=f"INTENT: {prompt_text[:300]}\n\nDRAFT:\n```\n{snippet}\n```"
+    )
 
     try:
         # Tap polish NEVER uses direct Anthropic billing (kind="anthropic",
@@ -2257,7 +2471,8 @@ def _do_tap_polish(body: dict, draft_text: str) -> str:
             }
             polished_blocks, _usage = anthropic_direct_chat(peer, polish_body)
             polished_text = "".join(
-                b.get("text", "") for b in polished_blocks
+                b.get("text", "")
+                for b in polished_blocks
                 if isinstance(b, dict) and b.get("type") == "text"
             )
         else:
@@ -2270,7 +2485,13 @@ def _do_tap_polish(body: dict, draft_text: str) -> str:
     polished_ext = _extract_code_block(polished_text)
     polished_block = polished_ext[0] if polished_ext else polished_text.strip()
     new_text = draft_text[:start] + f"```\n{polished_block}\n```" + draft_text[end:]
-    log("tap_polish_ok", intent=intent, peer=peer.name, before=len(snippet), after=len(polished_block))
+    log(
+        "tap_polish_ok",
+        intent=intent,
+        peer=peer.name,
+        before=len(snippet),
+        after=len(polished_block),
+    )
     return new_text
 
 
@@ -2299,7 +2520,7 @@ def _count_tool_cycles_since_reset(msgs: list) -> int:
         if m.get("role") == "user" and "[CLAF-LOOP-RESET" in str(c):
             last_reset = i
     count = 0
-    for m in msgs[last_reset + 1:]:
+    for m in msgs[last_reset + 1 :]:
         if m.get("role") == "assistant":
             ct = m.get("content", [])
             if isinstance(ct, list) and any(
@@ -2312,20 +2533,21 @@ def _count_tool_cycles_since_reset(msgs: list) -> int:
 def _count_replan_epochs(msgs: list) -> int:
     """Count how many [CLAF-LOOP-RESET] markers exist in the history."""
     return sum(
-        1 for m in msgs
-        if m.get("role") == "user"
-        and "[CLAF-LOOP-RESET" in str(m.get("content", ""))
+        1
+        for m in msgs
+        if m.get("role") == "user" and "[CLAF-LOOP-RESET" in str(m.get("content", ""))
     )
 
 
 class _LoopState(str, enum.Enum):
     """Linear states for the tool-call loop state machine."""
+
     IDLE = "idle"
-    ACTING = "acting"          # assistant emitted tool_use, waiting for result
-    OBSERVING = "observing"    # last message carries tool_result(s)
+    ACTING = "acting"  # assistant emitted tool_use, waiting for result
+    OBSERVING = "observing"  # last message carries tool_result(s)
     SUMMARIZING = "summarizing"  # per-epoch turn cap hit; compress + reset
-    PAUSED = "paused"          # hard cap / max epochs exhausted; ask operator
-    DONE = "done"              # no tools or task complete
+    PAUSED = "paused"  # hard cap / max epochs exhausted; ask operator
+    DONE = "done"  # no tools or task complete
 
 
 def _derive_loop_state(
@@ -2481,9 +2703,7 @@ def _compress_loop_history(
                 if isinstance(b.get("content"), str):
                     raw = b["content"]
                 elif isinstance(b.get("content"), list):
-                    raw = " ".join(
-                        x.get("text", "") for x in b["content"] if isinstance(x, dict)
-                    )
+                    raw = " ".join(x.get("text", "") for x in b["content"] if isinstance(x, dict))
                 snippet = raw[:max_tool_result_chars].replace("\n", " ")
                 if len(raw) > max_tool_result_chars:
                     snippet += " …"
@@ -2500,11 +2720,13 @@ def _compress_loop_history(
                         ):
                             name = tub.get("name", name)
                             break
-                new_blocks.append({
-                    "type": "tool_result",
-                    "tool_use_id": b.get("tool_use_id", ""),
-                    "content": f"[summarized {name} result]: {snippet}",
-                })
+                new_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": b.get("tool_use_id", ""),
+                        "content": f"[summarized {name} result]: {snippet}",
+                    }
+                )
                 compressed_any = True
             else:
                 new_blocks.append(b)
@@ -2525,7 +2747,9 @@ def _parse_bounded_file_task(text: str) -> list[dict] | None:
     Returns a list of items with auto_done criteria, or None if no pattern matches.
     """
     text_lower = text.lower()
-    m = re.search(r"(?:create|write|make)\s+(?:exactly\s+)?(\d+)\s+(?:numbered\s+)?files?", text_lower)
+    m = re.search(
+        r"(?:create|write|make)\s+(?:exactly\s+)?(\d+)\s+(?:numbered\s+)?files?", text_lower
+    )
     if not m:
         return None
     n = int(m.group(1))
@@ -2551,12 +2775,14 @@ def _parse_bounded_file_task(text: str) -> list[dict] | None:
     for i in range(1, n + 1):
         p = path_tmpl.replace("{N}", str(i)).replace("_N", f"_{i}").replace("N", str(i))
         c = content_tmpl.replace("{N}", str(i)).replace("N", str(i))
-        items.append({
-            "id": i,
-            "task": f"Write {p} with content {c!r}",
-            "status": "pending",
-            "auto_done": {"tool": "Write", "file_path": p, "content": c},
-        })
+        items.append(
+            {
+                "id": i,
+                "task": f"Write {p} with content {c!r}",
+                "status": "pending",
+                "auto_done": {"tool": "Write", "file_path": p, "content": c},
+            }
+        )
     return items
 
 
@@ -2573,13 +2799,18 @@ def _enforce_auto_task_scope(content_blocks: list[dict]) -> list[dict]:
     task = load_task()
     if not task or not task.get("auto"):
         return content_blocks
-    pending = [it for it in task.get("items", [])
-               if isinstance(it, dict) and it.get("status", "pending") == "pending" and it.get("auto_done")]
+    pending = [
+        it
+        for it in task.get("items", [])
+        if isinstance(it, dict) and it.get("status", "pending") == "pending" and it.get("auto_done")
+    ]
     # Task complete — mechanically stop any further tool calls.
     if not pending:
         has_tool = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content_blocks)
         if has_tool:
-            text_blocks = [b for b in content_blocks if isinstance(b, dict) and b.get("type") == "text"]
+            text_blocks = [
+                b for b in content_blocks if isinstance(b, dict) and b.get("type") == "text"
+            ]
             raw_text = " ".join(b.get("text", "") for b in text_blocks).strip()
             # If the model emitted malformed tool JSON as text, replace it with
             # a clean completion summary instead of echoing garbage.
@@ -2601,7 +2832,11 @@ def _enforce_auto_task_scope(content_blocks: list[dict]) -> list[dict]:
     changed = False
     out = []
     for block in content_blocks:
-        if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "Write":
+        if (
+            isinstance(block, dict)
+            and block.get("type") == "tool_use"
+            and block.get("name") == "Write"
+        ):
             inp = block.get("input", {})
             actual_path = inp.get("file_path", "")
             actual_content = inp.get("content", "")
@@ -2611,8 +2846,7 @@ def _enforce_auto_task_scope(content_blocks: list[dict]) -> list[dict]:
                 changed = True
         out.append(block)
     if changed:
-        log("auto_task_scope_rewrite", expected_path=exp_path,
-            expected_content=exp_content)
+        log("auto_task_scope_rewrite", expected_path=exp_path, expected_content=exp_content)
     return out
 
 
@@ -2660,7 +2894,11 @@ def _auto_resolve_task_items(body: dict) -> bool:
                 if isinstance(c2, str):
                     continue
                 for b2 in c2:
-                    if isinstance(b2, dict) and b2.get("type") == "tool_use" and b2.get("id") == tc_id:
+                    if (
+                        isinstance(b2, dict)
+                        and b2.get("type") == "tool_use"
+                        and b2.get("id") == tc_id
+                    ):
                         inp = b2.get("input", {})
                         content_val = inp.get("content")
                         break
@@ -2697,7 +2935,8 @@ def _task_pending_count() -> int:
         return 0
     _resolved = {"done", "failed", "skip"}
     return sum(
-        1 for it in task.get("items", [])
+        1
+        for it in task.get("items", [])
         if isinstance(it, dict)
         and str(it.get("status", "pending")).strip().lower() not in _resolved
     )
@@ -2714,9 +2953,18 @@ def _looks_agentic_task(text: str) -> bool:
         return True
     # Explicit agentic / task keywords.
     agentic_signals = (
-        "create a task", "make a task", "do this task", "automate this",
-        "run this workflow", "every day", "every morning", "every night",
-        "on a schedule", "repeat this", "for each of", "for every",
+        "create a task",
+        "make a task",
+        "do this task",
+        "automate this",
+        "run this workflow",
+        "every day",
+        "every morning",
+        "every night",
+        "on a schedule",
+        "repeat this",
+        "for each of",
+        "for every",
     )
     if any(sig in t for sig in agentic_signals):
         return True
@@ -2724,6 +2972,7 @@ def _looks_agentic_task(text: str) -> bool:
     if re.search(r"\b\d+\.\s+(create|write|run|check|open|send|read|edit|delete|make)\b", t):
         return True
     return False
+
 
 def _auto_seed_task(body: dict, conv_fp: str) -> bool:
     """Seed ~/.claf/current_task.json from the operator's instruction when an
@@ -2767,21 +3016,29 @@ def _auto_seed_task(body: dict, conv_fp: str) -> bool:
         # bounded task within the TTL window.
         _bounded_new = _parse_bounded_file_task(text)
         if _bounded_new:
-            _existing_items = [it for it in existing.get("items", [])
-                               if isinstance(it, dict) and it.get("auto_done")]
+            _existing_items = [
+                it
+                for it in existing.get("items", [])
+                if isinstance(it, dict) and it.get("auto_done")
+            ]
             if len(_bounded_new) != len(_existing_items):
                 pass  # counts differ → reseed below
             elif _bounded_new and _existing_items:
-                _new_keys = {(it["auto_done"]["file_path"], it["auto_done"]["content"])
-                             for it in _bounded_new}
-                _old_keys = {(it["auto_done"]["file_path"], it["auto_done"]["content"])
-                             for it in _existing_items}
+                _new_keys = {
+                    (it["auto_done"]["file_path"], it["auto_done"]["content"])
+                    for it in _bounded_new
+                }
+                _old_keys = {
+                    (it["auto_done"]["file_path"], it["auto_done"]["content"])
+                    for it in _existing_items
+                }
                 if _new_keys == _old_keys:
                     return False  # same bounded task still running
             # otherwise fall through to reseed
         else:
             try:
                 import time as _t
+
                 ttl_min = int(os.environ.get("CLAF_AUTO_TASK_TTL_MIN", "30"))
                 if _t.time() - TASK_FILE.stat().st_mtime < ttl_min * 60:
                     return False  # fresh auto task — same task still running
@@ -2791,13 +3048,23 @@ def _auto_seed_task(body: dict, conv_fp: str) -> bool:
     bounded_items = _parse_bounded_file_task(text)
     if bounded_items:
         save_task({"goal": goal, "auto": True, "conv_fp": conv_fp, "items": bounded_items})
-        log("auto_task_seeded", goal_chars=len(goal), conv_fp=conv_fp,
-            replaced_stale=bool(existing), bounded_items=len(bounded_items))
+        log(
+            "auto_task_seeded",
+            goal_chars=len(goal),
+            conv_fp=conv_fp,
+            replaced_stale=bool(existing),
+            bounded_items=len(bounded_items),
+        )
         return True
-    save_task({"goal": goal, "auto": True, "conv_fp": conv_fp,
-               "items": [{"id": 1, "task": goal, "status": "pending"}]})
-    log("auto_task_seeded", goal_chars=len(goal), conv_fp=conv_fp,
-        replaced_stale=bool(existing))
+    save_task(
+        {
+            "goal": goal,
+            "auto": True,
+            "conv_fp": conv_fp,
+            "items": [{"id": 1, "task": goal, "status": "pending"}],
+        }
+    )
+    log("auto_task_seeded", goal_chars=len(goal), conv_fp=conv_fp, replaced_stale=bool(existing))
     return True
 
 
@@ -2844,10 +3111,14 @@ def _trim_for_local(system_text: str, msgs: list[dict]) -> tuple[str, list[dict]
     msgs = capped_msgs
 
     if len(system_text or "") != sys_before or len(msgs) != msgs_before or trimmed_content:
-        info = {"trimmed": True, "sys_chars_before": sys_before,
-                "sys_chars_after": len(system_text or ""),
-                "msgs_before": msgs_before, "msgs_after": len(msgs),
-                "msg_content_capped": trimmed_content}
+        info = {
+            "trimmed": True,
+            "sys_chars_before": sys_before,
+            "sys_chars_after": len(system_text or ""),
+            "msgs_before": msgs_before,
+            "msgs_after": len(msgs),
+            "msg_content_capped": trimmed_content,
+        }
     return system_text, msgs, info
 
 
@@ -2868,7 +3139,8 @@ async def messages(request: Request):
     finally:
         _claf_turn.reset(token)
         turn["total_ms"] = int((time.monotonic() - turn["t0"]) * 1000)
-        log("turn_summary",
+        log(
+            "turn_summary",
             turn_id=turn["turn_id"],
             conv_fp=_conv_fingerprint(body.get("messages", [])),
             message_count=len(body.get("messages", [])),
@@ -2882,7 +3154,8 @@ async def messages(request: Request):
             model=turn.get("model"),
             tool_use=turn.get("tool_use"),
             stream=body.get("stream", False),
-            status=turn.get("status", "ok"))
+            status=turn.get("status", "ok"),
+        )
 
 
 async def _messages_impl(request: Request, body: dict, turn: dict):
@@ -2898,15 +3171,20 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     # Strip hook-injected blocks from prompt before snapshotting so the snippet
     # shows the actual operator intent, not the prepended STANDING ORDERS wall.
     import re as _re_req
+
     _prompt_clean = _last_user if isinstance(_last_user, str) else json.dumps(_last_user)
     for _hdr in (
-        r'\[standing orders\][^\[]*', r'\[task_seed_required[^\]]*\][^\[]*',
-        r'\[session snapshot\][^\[]*', r'\[heartbeat[^\]]*\][^\[]*',
-        r'\[non-negotiables\][^\[]*', r'\[topology\][^\[]*',
-        r'\[retry_schema[^\]]*\][^\[]*', r'\[open tasks[^\]]*\][^\[]*',
+        r"\[standing orders\][^\[]*",
+        r"\[task_seed_required[^\]]*\][^\[]*",
+        r"\[session snapshot\][^\[]*",
+        r"\[heartbeat[^\]]*\][^\[]*",
+        r"\[non-negotiables\][^\[]*",
+        r"\[topology\][^\[]*",
+        r"\[retry_schema[^\]]*\][^\[]*",
+        r"\[open tasks[^\]]*\][^\[]*",
     ):
-        _prompt_clean = _re_req.sub(_hdr, ' ', _prompt_clean, flags=_re_req.DOTALL)
-    _prompt_clean = ' '.join(_prompt_clean.split())
+        _prompt_clean = _re_req.sub(_hdr, " ", _prompt_clean, flags=_re_req.DOTALL)
+    _prompt_clean = " ".join(_prompt_clean.split())
     log(
         "request_in",
         turn_id=turn["turn_id"],
@@ -2917,7 +3195,9 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
         # Diagnostics: is the native memory + hook content actually arriving?
         sys_chars=len(_sys_probe),
         sys_has_claude_md=("STANDING ORDERS" in _sys_probe or "STARTUP ROUTINE" in _sys_probe),
-        sys_has_memory=("MEMORY.md" in _sys_probe or "auto-memory" in _sys_probe or "feedback_" in _sys_probe),
+        sys_has_memory=(
+            "MEMORY.md" in _sys_probe or "auto-memory" in _sys_probe or "feedback_" in _sys_probe
+        ),
         prompt_has_retry_hook=("RETRY_SCHEMA" in _last_user),
         prompt_snippet=_prompt_clean[:200],
     )
@@ -2995,8 +3275,11 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
         body["messages"] = list(body.get("messages", [])) + [
             {"role": "user", "content": _reset_content}
         ]
-        log("loop_replan_injected", epoch=_loop_info['epochs'] + 1,
-            turns_this_epoch=_loop_info['cycles_since_reset'])
+        log(
+            "loop_replan_injected",
+            epoch=_loop_info["epochs"] + 1,
+            turns_this_epoch=_loop_info["cycles_since_reset"],
+        )
 
     # LOCAL mode + hard-task signal = explicit refusal. The operator picked
     # local for a reason; don't silently serve a request that needed cloud.
@@ -3041,10 +3324,19 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                     trickle_reservation = None
                     trickle_mode = "local"
                     trickle_degrade_note = throttle.degrade_message("flash")
-                    log("trickle_flash_degraded_to_local", scores=trickle_scores, reason="no_cloud_peer")
+                    log(
+                        "trickle_flash_degraded_to_local",
+                        scores=trickle_scores,
+                        reason="no_cloud_peer",
+                    )
                 else:
-                    log("trickle_flash_approved", reservation=trickle_reservation,
-                        emergency=emergency, scores=trickle_scores, provider=provider.name)
+                    log(
+                        "trickle_flash_approved",
+                        reservation=trickle_reservation,
+                        emergency=emergency,
+                        scores=trickle_scores,
+                        provider=provider.name,
+                    )
             else:
                 tap_res = throttle.reserve(800, "tap")
                 if tap_res:
@@ -3111,10 +3403,20 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     # GUARD: only apply to local-pool ollama peers — cloud-pool ollama peers
     # (e.g. ollama-cloud-coder) carry their own model name and must not be
     # overridden with the local workhorse model.
-    routed_model = select_local_model(body) if (provider.kind == "ollama" and provider.pool == "local") else provider.model
+    routed_model = (
+        select_local_model(body)
+        if (provider.kind == "ollama" and provider.pool == "local")
+        else provider.model
+    )
     if routed_model != provider.model:
         from dataclasses import replace as _replace
-        log("dual_local_route", from_model=provider.model, to_model=routed_model, reason="image_in_request")
+
+        log(
+            "dual_local_route",
+            from_model=provider.model,
+            to_model=routed_model,
+            reason="image_in_request",
+        )
         provider = _replace(provider, model=routed_model)
 
     # Routing-proof fields (verification-spec layer 3): emit the actual
@@ -3185,25 +3487,51 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     # Groq is text-only and cannot fix the action. Cap fallback tier at 1
     # (Cerebras) when the user is correcting or rejecting a previous action.
     _CORRECTION_SIGNALS = [
-        "not what i asked", "not what i meant", "not what i wanted",
-        "that is not what", "that's not what", "this is not what",
-        "you misunderstood", "you misread", "you missed",
-        "do it again", "try again", "do that again",
-        "that's wrong", "you're wrong", "is wrong", "was wrong",
-        "no, i said", "i didn't ask", "i didn't mean", "i didn't want",
-        "i meant", "i meant to", "i meant the", "actually i meant",
-        "stop doing", "forget that", "back up", "undo that", "start over",
-        "revert", "cancel that", "abort that",
+        "not what i asked",
+        "not what i meant",
+        "not what i wanted",
+        "that is not what",
+        "that's not what",
+        "this is not what",
+        "you misunderstood",
+        "you misread",
+        "you missed",
+        "do it again",
+        "try again",
+        "do that again",
+        "that's wrong",
+        "you're wrong",
+        "is wrong",
+        "was wrong",
+        "no, i said",
+        "i didn't ask",
+        "i didn't mean",
+        "i didn't want",
+        "i meant",
+        "i meant to",
+        "i meant the",
+        "actually i meant",
+        "stop doing",
+        "forget that",
+        "back up",
+        "undo that",
+        "start over",
+        "revert",
+        "cancel that",
+        "abort that",
     ]
     _prompt_text_lower = _flatten_prompt_text(body).lower()
     _is_correction = any(s in _prompt_text_lower for s in _CORRECTION_SIGNALS)
     if _is_correction:
         log("correction_detected", prompt_snippet=_prompt_text_lower[:120])
     _max_fallback_tier: int = (
-        3 if _is_correction       # allow OpenRouter so corrections can fix tool mistakes
-        else 3 if trickle_mode == "flash"   # Cerebras -> Groq -> OpenRouter before local
-        else 3 if trickle_mode == "tap"
-        else 999  # explicit cloud escalation — all tiers allowed
+        3
+        if _is_correction  # allow OpenRouter so corrections can fix tool mistakes
+        else (
+            3
+            if trickle_mode == "flash"  # Cerebras -> Groq -> OpenRouter before local
+            else 3 if trickle_mode == "tap" else 999
+        )  # explicit cloud escalation — all tiers allowed
     )
     # ── SERVER-SIDE TOOLBOX DISPATCH ─────────────────────────────────────────
     # Toolbox-matched commands bypass the 3B entirely. The model's xdg-open prior
@@ -3213,6 +3541,7 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     if _tb_tool:
         try:
             import importlib.util as _ilu
+
             _tool_path = Path(__file__).resolve().parent / "toolbox" / f"{_tb_tool}.py"
             if _tool_path.exists():
                 _spec = _ilu.spec_from_file_location(f"toolbox_{_tb_tool}", _tool_path)
@@ -3226,7 +3555,8 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                         _last_msg_raw = _c if isinstance(_c, str) else json.dumps(_c)
                         break
                 import re as _re_tb
-                _jm = _re_tb.search(r'\{[^{}]*\}', _last_msg_raw)
+
+                _jm = _re_tb.search(r"\{[^{}]*\}", _last_msg_raw)
                 if _jm:
                     try:
                         _tb_args = json.loads(_jm.group(0))
@@ -3235,8 +3565,12 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 # Always pass raw user text so tools can parse positional args
                 _tb_args.setdefault("_raw_command", _last_msg_raw)
                 _result_text = _mod.run(_tb_args)
-                log("toolbox_direct_dispatch", tool=_tb_tool, args=_tb_args,
-                    result_len=len(_result_text))
+                log(
+                    "toolbox_direct_dispatch",
+                    tool=_tb_tool,
+                    args=_tb_args,
+                    result_len=len(_result_text),
+                )
                 _tb_resp = wrap_anthropic_response(
                     requested_model,
                     [{"type": "text", "text": _result_text}],
@@ -3247,8 +3581,8 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 log(
                     "response_out",
                     turn_id=turn["turn_id"],
-                    tier=getattr(provider, 'tier', None),
-                    name=getattr(provider, 'name', 'unknown'),
+                    tier=getattr(provider, "tier", None),
+                    name=getattr(provider, "name", "unknown"),
                     out_chars=len(_result_text),
                     tool_use=False,
                     tool_use_count=0,
@@ -3261,11 +3595,10 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                     "assistant",
                     [{"type": "text", "text": _result_text}],
                     model=requested_model,
-                    provider=getattr(provider, 'name', 'unknown'),
+                    provider=getattr(provider, "name", "unknown"),
                 )
                 if body.get("stream"):
-                    return StreamingResponse(_sse_events(_tb_resp),
-                                             media_type="text/event-stream")
+                    return StreamingResponse(_sse_events(_tb_resp), media_type="text/event-stream")
                 return JSONResponse(_tb_resp)
         except Exception as _tb_exc:
             log("toolbox_direct_dispatch_error", tool=_tb_tool, error=str(_tb_exc))
@@ -3321,13 +3654,17 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 # select_local_tools() reads the request and picks 4-6 tools from
                 # the matching group (browser/filesystem/tasks/core) = ~800-1200 tokens.
                 _tools_eff = select_local_tools(body, _tools) if _tools else None
-                log("local_tools_grouped",
+                log(
+                    "local_tools_grouped",
                     tools_before=len(_tools) if _tools else 0,
                     tools_after=len(_tools_eff) if _tools_eff else 0,
-                    first_tools=[t.get("name") for t in (_tools_eff or [])][:6])
+                    first_tools=[t.get("name") for t in (_tools_eff or [])][:6],
+                )
             if _sys:
                 _msgs.insert(0, {"role": "system", "content": _sys})
-            _blocks, _usage, _tool_use = ollama_chat(p, _msgs, _tools_eff, max_tokens=body.get("max_tokens"))
+            _blocks, _usage, _tool_use = ollama_chat(
+                p, _msgs, _tools_eff, max_tokens=body.get("max_tokens")
+            )
         elif p.kind == "openai_compat":
             _msgs = messages_from_anthropic(body.get("messages", []), flavor="openai")
             # Trim system + history for cloud peers too. The full Claude Code
@@ -3354,10 +3691,16 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
             # signal; with tools capped at 8, groq bodies run ~4KB (25KB headroom
             # under its ~30KB limit) so caps can be generous. max_sys_chars here is
             # the TOTAL system budget (charter + tail).
-            _cloud_sys_max = p.max_sys_chars if p.max_sys_chars is not None \
+            _cloud_sys_max = (
+                p.max_sys_chars
+                if p.max_sys_chars is not None
                 else int(os.environ.get("CLAF_CLOUD_SYS_MAX_CHARS", "8000"))
-            _cloud_msgs_max = p.max_msgs if p.max_msgs is not None \
+            )
+            _cloud_msgs_max = (
+                p.max_msgs
+                if p.max_msgs is not None
                 else int(os.environ.get("CLAF_CLOUD_MAX_MSGS", "20"))
+            )
             # full_context peers (e.g. cerebras, the workhorse) get the ENTIRE
             # natively-loaded memory + history untrimmed — charter still prepended.
             # This is what gives the hybrid the same context the primary agent has,
@@ -3372,24 +3715,35 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
             _mem_pack = _load_memory_pack() if _full_ctx else ""
             if _full_ctx:
                 _charter = _charter + _mem_pack
-                log("cloud_full_context", provider=p.name,
+                log(
+                    "cloud_full_context",
+                    provider=p.name,
                     charter_chars=len(_charter) - len(_mem_pack),
                     memory_pack_chars=len(_mem_pack),
                     sys_tail_chars=len(_sys_tail),
-                    msg_count=len(_cloud_msgs))
+                    msg_count=len(_cloud_msgs),
+                )
             if _trim_on:
                 _tail_budget = _cloud_sys_max - len(_charter)
                 if _tail_budget <= 0:
                     # Charter alone fills the budget — ship it whole, drop the tail.
                     _cloud_sys = _charter
                     if _sys_tail:
-                        log("cloud_sys_tail_dropped", provider=p.name,
-                            charter_chars=len(_charter), tail_chars=len(_sys_tail))
+                        log(
+                            "cloud_sys_tail_dropped",
+                            provider=p.name,
+                            charter_chars=len(_charter),
+                            tail_chars=len(_sys_tail),
+                        )
                 elif len(_sys_tail) > _tail_budget:
                     _cloud_sys = _charter + _sys_tail[:_tail_budget]
-                    log("cloud_sys_trimmed", provider=p.name,
+                    log(
+                        "cloud_sys_trimmed",
+                        provider=p.name,
                         charter_chars=len(_charter),
-                        tail_before=len(_sys_tail), tail_after=_tail_budget)
+                        tail_before=len(_sys_tail),
+                        tail_after=_tail_budget,
+                    )
                 else:
                     _cloud_sys = _charter + _sys_tail
             else:
@@ -3405,13 +3759,20 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
             if _trim_on:
                 if len(_cloud_msgs) > _cloud_msgs_max:
                     _cloud_msgs = _cloud_msgs[-_cloud_msgs_max:]
-                    log("cloud_msgs_trimmed", provider=p.name,
-                        msgs_before=len(_msgs), msgs_after=_cloud_msgs_max)
+                    log(
+                        "cloud_msgs_trimmed",
+                        provider=p.name,
+                        msgs_before=len(_msgs),
+                        msgs_after=_cloud_msgs_max,
+                    )
                 # Cap per-message content. A single tool_result (file read,
                 # bash output) can be 10K+ chars — enough to 413 groq even after
                 # count and system trimming. Truncate each message's string content.
-                _msg_content_max = p.max_msg_content if p.max_msg_content is not None \
+                _msg_content_max = (
+                    p.max_msg_content
+                    if p.max_msg_content is not None
                     else int(os.environ.get("CLAF_CLOUD_MSG_CONTENT_MAX", "2000"))
+                )
                 _trimmed_content = False
                 _cloud_msgs_final = []
                 for _m in _cloud_msgs:
@@ -3447,43 +3808,76 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                         # Task tools FIRST — the operator runs the task-list loop
                         # constantly; these must never be capped out ("looking for
                         # task list tool" bug).
-                        "TaskList", "TaskCreate", "TaskUpdate", "TaskGet",
+                        "TaskList",
+                        "TaskCreate",
+                        "TaskUpdate",
+                        "TaskGet",
                         # High-frequency sensei browser tools.
-                        "mcp__sensei__tab_create", "mcp__sensei__screenshot",
-                        "mcp__sensei__read_full", "mcp__sensei__click",
-                        "mcp__sensei__fill", "mcp__sensei__browse",
-                        "mcp__sensei__scroll", "mcp__sensei__key_press",
-                        "mcp__sensei__read", "mcp__sensei__js_eval",
+                        "mcp__sensei__tab_create",
+                        "mcp__sensei__screenshot",
+                        "mcp__sensei__read_full",
+                        "mcp__sensei__click",
+                        "mcp__sensei__fill",
+                        "mcp__sensei__browse",
+                        "mcp__sensei__scroll",
+                        "mcp__sensei__key_press",
+                        "mcp__sensei__read",
+                        "mcp__sensei__js_eval",
                     ]
                     # Email intent boost: when the user asks about email/inbox,
                     # force the email-bridge tools into the cloud tool cap so the
                     # model uses them instead of opening browser tabs.
                     _prompt_text = _flatten_prompt_text(body)
                     if any(s in _prompt_text for s in _EMAIL_SIGNALS):
-                        _HIGH_FREQ.extend([
-                            "mcp__email-bridge__check_inbox",
-                            "mcp__email-bridge__search_inbox",
-                            "mcp__email-bridge__read_email",
-                            "mcp__email-bridge__list_accounts",
-                            "mcp__email-bridge__list_folders",
-                        ])
+                        _HIGH_FREQ.extend(
+                            [
+                                "mcp__email-bridge__check_inbox",
+                                "mcp__email-bridge__search_inbox",
+                                "mcp__email-bridge__read_email",
+                                "mcp__email-bridge__list_accounts",
+                                "mcp__email-bridge__list_folders",
+                            ]
+                        )
                         log("email_tools_boosted", provider=p.name)
                     _tool_map = {t.get("name"): t for t in _tools}
                     _priority = [_tool_map[n] for n in _HIGH_FREQ if n in _tool_map]
                     _priority_names = {t.get("name") for t in _priority}
-                    _sensei_rest = [t for t in _tools if t.get("name", "").startswith("mcp__sensei__") and t.get("name") not in _priority_names]
-                    _other_mcp = [t for t in _tools if t.get("name", "").startswith("mcp__") and not t.get("name", "").startswith("mcp__sensei__")]
-                    _rest = [t for t in _tools if not t.get("name", "").startswith("mcp__") and t.get("name") not in _EXCLUDE]
+                    _sensei_rest = [
+                        t
+                        for t in _tools
+                        if t.get("name", "").startswith("mcp__sensei__")
+                        and t.get("name") not in _priority_names
+                    ]
+                    _other_mcp = [
+                        t
+                        for t in _tools
+                        if t.get("name", "").startswith("mcp__")
+                        and not t.get("name", "").startswith("mcp__sensei__")
+                    ]
+                    _rest = [
+                        t
+                        for t in _tools
+                        if not t.get("name", "").startswith("mcp__")
+                        and t.get("name") not in _EXCLUDE
+                    ]
                     _ordered = _priority + _sensei_rest + _other_mcp + _rest
-                    _tools_eff = _ordered[:p.max_tools]
-                log("cloud_tools_capped", provider=p.name,
-                    tools_before=len(_tools), tools_after=len(_tools_eff) if _tools_eff else 0,
-                    first_tools=[t.get("name") for t in (_tools_eff or [])][:5])
+                    _tools_eff = _ordered[: p.max_tools]
+                log(
+                    "cloud_tools_capped",
+                    provider=p.name,
+                    tools_before=len(_tools),
+                    tools_after=len(_tools_eff) if _tools_eff else 0,
+                    first_tools=[t.get("name") for t in (_tools_eff or [])][:5],
+                )
             _blocks, _usage, _tool_use = openai_compat_chat(p, _cloud_msgs, _tools_eff)
         elif p.kind == "anthropic":
             _blocks, _usage = anthropic_direct_chat(p, body)
             _tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in _blocks)
-            _text = "".join(b.get("text", "") for b in _blocks if isinstance(b, dict) and b.get("type") == "text")
+            _text = "".join(
+                b.get("text", "")
+                for b in _blocks
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
             return _blocks, _usage, False, _text, _tool_use
         else:
             raise RuntimeError(f"unknown provider kind: {p.kind}")
@@ -3492,21 +3886,27 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
         # try the heuristic directive scraper (covers prose-format tool calls
         # from models that don't emit native tool_calls).
         if not _tool_use and _tools:
-            _text0 = "".join(b.get("text", "") for b in _blocks
-                             if isinstance(b, dict) and b.get("type") == "text")
+            _text0 = "".join(
+                b.get("text", "")
+                for b in _blocks
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
             if _text0:
                 _scraped, _scraped_tu = parse_directives_to_content(_text0, _tools or [])
                 if _scraped_tu:
                     _blocks, _tool_use = _scraped, True
-        _text = "".join(b.get("text", "") for b in _blocks
-                        if isinstance(b, dict) and b.get("type") == "text")
+        _text = "".join(
+            b.get("text", "") for b in _blocks if isinstance(b, dict) and b.get("type") == "text"
+        )
 
         # Action bridge: auto-execute BROWSE:/SHELL:/FILE: directives in raw text
         if HAS_ACTION_BRIDGE and _text:
             _new_text = execute_actions_in_text(_text)
             if _new_text != _text:
                 # Rebuild blocks with augmented text
-                _blocks = [{"type": "text", "text": _new_text}] + [b for b in _blocks if not (isinstance(b, dict) and b.get("type") == "text")]
+                _blocks = [{"type": "text", "text": _new_text}] + [
+                    b for b in _blocks if not (isinstance(b, dict) and b.get("type") == "text")
+                ]
                 _text = _new_text
 
         return _blocks, _usage, False, _text, _tool_use
@@ -3522,16 +3922,23 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 # asyncio.to_thread keeps the loop responsive; Ollama still serializes
                 # inference, but the proxy no longer goes dark while it works.
                 _d_start = time.monotonic()
-                content_blocks, usage, used_react, assistant_text, tool_use = await asyncio.to_thread(_dispatch_provider, provider)
+                content_blocks, usage, used_react, assistant_text, tool_use = (
+                    await asyncio.to_thread(_dispatch_provider, provider)
+                )
                 _dispatch_kind = "fallback" if _rate_limit_failed else "primary"
                 _record_dispatch(_dispatch_kind, provider, _d_start, time.monotonic())
                 # Mechanical scope enforcement: for bounded auto tasks, ensure
                 # the emitted tool call matches the next pending item. Weak local
                 # models often emit the wrong file or malformed arguments.
                 content_blocks = _enforce_auto_task_scope(content_blocks)
-                tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content_blocks)
-                assistant_text = "".join(b.get("text", "") for b in content_blocks
-                                         if isinstance(b, dict) and b.get("type") == "text")
+                tool_use = any(
+                    isinstance(b, dict) and b.get("type") == "tool_use" for b in content_blocks
+                )
+                assistant_text = "".join(
+                    b.get("text", "")
+                    for b in content_blocks
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
                 break  # success
             except Exception as _call_exc:
                 # Any CLOUD peer failure (429 rate-limit, 413 payload-too-large,
@@ -3543,9 +3950,13 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 if not is_cloud_failure:
                     raise  # local failure — surface immediately
                 _rate_limit_failed.add(provider.name)
-                log("cloud_peer_fallback", failed_provider=provider.name,
-                    failed_tier=provider.tier, status=_status,
-                    failed_so_far=sorted(_rate_limit_failed))
+                log(
+                    "cloud_peer_fallback",
+                    failed_provider=provider.name,
+                    failed_tier=provider.tier,
+                    status=_status,
+                    failed_so_far=sorted(_rate_limit_failed),
+                )
                 provider = next_cloud_peer(_rate_limit_failed, max_tier=_max_fallback_tier)
                 if provider is not None:
                     turn["provider"] = provider.name
@@ -3584,7 +3995,9 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                                 False,
                             )
                             if body.get("stream"):
-                                return StreamingResponse(_sse_events(_rl_resp), media_type="text/event-stream")
+                                return StreamingResponse(
+                                    _sse_events(_rl_resp), media_type="text/event-stream"
+                                )
                             return _rl_resp
                         provider = _local
                         turn["provider"] = provider.name
@@ -3594,24 +4007,32 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                             throttle.refund(trickle_reservation)
                             trickle_reservation = None
                         trickle_mode = "local"
-                        log("rate_limit_degraded_to_local",
+                        log(
+                            "rate_limit_degraded_to_local",
                             failed_peers=sorted(_rate_limit_failed),
-                            local_provider=_local.name)
+                            local_provider=_local.name,
+                        )
                     else:
                         raise RuntimeError(
                             f"all cloud peers rate-limited and no local fallback: "
                             f"{sorted(_rate_limit_failed)}"
                         ) from _call_exc
                 else:
-                    log("rate_limit_next_peer", next_provider=provider.name, next_tier=provider.tier)
+                    log(
+                        "rate_limit_next_peer", next_provider=provider.name, next_tier=provider.tier
+                    )
     except Exception as e:
-        log("provider_error", tier=getattr(provider, 'tier', None),
-            name=getattr(provider, 'name', 'unknown'), error=str(e),
-            rate_limit_chain=sorted(_rate_limit_failed) if _rate_limit_failed else None)
+        log(
+            "provider_error",
+            tier=getattr(provider, "tier", None),
+            name=getattr(provider, "name", "unknown"),
+            error=str(e),
+            rate_limit_chain=sorted(_rate_limit_failed) if _rate_limit_failed else None,
+        )
         if trickle_reservation:
             throttle.refund(trickle_reservation)
             log("trickle_refund", reservation=trickle_reservation, reason="provider_error")
-        _pname = getattr(provider, 'name', 'all-peers-exhausted')
+        _pname = getattr(provider, "name", "all-peers-exhausted")
         return JSONResponse(
             status_code=502,
             content={
@@ -3626,10 +4047,12 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     # model generated 1 token or nothing. Surface an explicit message instead of
     # silently returning an empty response that makes Claude Code stop with no output.
     _local_overflow = False
-    if (provider.pool == "local"
-            and usage.get("output_tokens", 0) <= 1
-            and not assistant_text
-            and not tool_use):
+    if (
+        provider.pool == "local"
+        and usage.get("output_tokens", 0) <= 1
+        and not assistant_text
+        and not tool_use
+    ):
         _local_overflow = True
         _overflow_msg = (
             f"[CLAF: local model context overflow — "
@@ -3637,10 +4060,12 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
             "no response generated. Run /clear to reset context, "
             "or prefix your message with 'escalate:' to force cloud.]"
         )
-        log("local_ctx_overflow_detected",
+        log(
+            "local_ctx_overflow_detected",
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
-            provider=provider.name)
+            provider=provider.name,
+        )
         assistant_text = _overflow_msg
         content_blocks = [{"type": "text", "text": _overflow_msg}]
 
@@ -3656,10 +4081,12 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     # emit the next tool call. One-shot via _claf_task_pushed; if this still
     # returns text-only, the giveup interceptor below escalates to cloud. Cost
     # ladder: cheap local retry → paid cloud only when local is truly stuck.
-    if (not tool_use
-            and body.get("tools")
-            and not _local_overflow
-            and not body.get("_claf_task_pushed")):
+    if (
+        not tool_use
+        and body.get("tools")
+        and not _local_overflow
+        and not body.get("_claf_task_pushed")
+    ):
         _task = load_task()
         _pending = _task_pending_count() if _task else 0
         if _pending > 0:
@@ -3668,27 +4095,41 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 if _task and _task.get("auto"):
                     try:
                         TASK_FILE.unlink(missing_ok=True)
-                        log("stale_auto_task_cleared_skipping_redispatch",
-                            task_conv_fp=_task.get("conv_fp"), current_conv_fp=_conv_fp)
+                        log(
+                            "stale_auto_task_cleared_skipping_redispatch",
+                            task_conv_fp=_task.get("conv_fp"),
+                            current_conv_fp=_conv_fp,
+                        )
                     except OSError as _clr_exc:
                         log("stale_auto_task_clear_failed", error=str(_clr_exc))
                 else:
-                    log("stale_model_task_skipping_redispatch",
-                        task_conv_fp=_task.get("conv_fp"), current_conv_fp=_conv_fp)
+                    log(
+                        "stale_model_task_skipping_redispatch",
+                        task_conv_fp=_task.get("conv_fp"),
+                        current_conv_fp=_conv_fp,
+                    )
             else:
-                log("task_continuation_forcing_redispatch",
-                    provider=provider.name, pending_items=_pending,
-                    snippet=(assistant_text or "")[:120])
+                log(
+                    "task_continuation_forcing_redispatch",
+                    provider=provider.name,
+                    pending_items=_pending,
+                    snippet=(assistant_text or "")[:120],
+                )
                 _continue_msg = {
                     "role": "user",
-                    "content": [{"type": "text", "text": (
-                        f"[CLAF-TASK-CONTINUE] Your active task file still has {_pending} "
-                        "unresolved item(s) — you are MID-TASK, not done. Do NOT reply with "
-                        "prose, do NOT summarize, do NOT stop. Emit your NEXT tool call now "
-                        "to advance the next pending item. If an item just finished, first "
-                        "update ~/.claf/current_task.json (set its status to \"done\"), then "
-                        "call the tool for the next item this same turn."
-                    )}],
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"[CLAF-TASK-CONTINUE] Your active task file still has {_pending} "
+                                "unresolved item(s) — you are MID-TASK, not done. Do NOT reply with "
+                                "prose, do NOT summarize, do NOT stop. Emit your NEXT tool call now "
+                                "to advance the next pending item. If an item just finished, first "
+                                'update ~/.claf/current_task.json (set its status to "done"), then '
+                                "call the tool for the next item this same turn."
+                            ),
+                        }
+                    ],
                 }
                 body["messages"] = list(body.get("messages", [])) + [_continue_msg]
                 body["_claf_task_pushed"] = True
@@ -3696,15 +4137,23 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 # giveup/replan fallback below, not the continuation path.
                 try:
                     _tc_start = time.monotonic()
-                    content_blocks, usage, used_react, assistant_text, tool_use = \
+                    content_blocks, usage, used_react, assistant_text, tool_use = (
                         await asyncio.to_thread(_dispatch_provider, provider)
+                    )
                     _record_dispatch("task_continue", provider, _tc_start, time.monotonic())
                     turn["redispatch_count"] = turn.get("redispatch_count", 0) + 1
-                    log("task_continuation_redispatch_done", provider=provider.name,
-                        tool_use=tool_use, out_chars=len(assistant_text or ""))
+                    log(
+                        "task_continuation_redispatch_done",
+                        provider=provider.name,
+                        tool_use=tool_use,
+                        out_chars=len(assistant_text or ""),
+                    )
                 except Exception as _continue_exc:
-                    log("task_continuation_redispatch_failed", provider=provider.name,
-                        error=str(_continue_exc))
+                    log(
+                        "task_continuation_redispatch_failed",
+                        provider=provider.name,
+                        error=str(_continue_exc),
+                    )
                 # If the model STILL replied text-only and the task file was seeded
                 # by us (auto:true), the model is saying the work is done — clear
                 # the auto file so it can't linger and tax every later turn with an
@@ -3727,17 +4176,23 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     # REPLAN nudge on a CLOUD peer (which has browser tools) so the loop keeps
     # going. The _claf_replanned flag caps this at one re-dispatch per request.
     _GIVEUP_MARKERS = (
-        "i cannot access", "unable to connect", "connectivity issue",
-        "service is unavailable", "service may not be accessible",
-        "let me check if there are local files", "let me check if you have any local",
-        "let me check if we have any local", "i'll stop here", "please try again",
-        "cannot establish connection", "persistent connectivity",
-        "timing out when trying", "appears to be unavailable", "i'm unable to",
+        "i cannot access",
+        "unable to connect",
+        "connectivity issue",
+        "service is unavailable",
+        "service may not be accessible",
+        "let me check if there are local files",
+        "let me check if you have any local",
+        "let me check if we have any local",
+        "i'll stop here",
+        "please try again",
+        "cannot establish connection",
+        "persistent connectivity",
+        "timing out when trying",
+        "appears to be unavailable",
+        "i'm unable to",
     )
-    if (not tool_use
-            and body.get("tools")
-            and assistant_text
-            and not body.get("_claf_replanned")):
+    if not tool_use and body.get("tools") and assistant_text and not body.get("_claf_replanned"):
         _low = assistant_text.lower()
         _hit = next((m for m in _GIVEUP_MARKERS if m in _low), None)
         if _hit is None and _is_action_turn(body):
@@ -3747,21 +4202,32 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
             _hit = "action_turn_text_only"
         if _hit:
             # Force a cloud peer for the replan turn so browser tools are present.
-            _replan_provider = provider if provider.pool == "cloud" else pick_cloud_peer(prefer_tiers=(1,))
+            _replan_provider = (
+                provider if provider.pool == "cloud" else pick_cloud_peer(prefer_tiers=(1,))
+            )
             if _replan_provider is not None:
-                log("giveup_detected_forcing_replan", provider=provider.name,
-                    redispatch_to=_replan_provider.name, marker=_hit,
-                    snippet=assistant_text[:120])
+                log(
+                    "giveup_detected_forcing_replan",
+                    provider=provider.name,
+                    redispatch_to=_replan_provider.name,
+                    marker=_hit,
+                    snippet=assistant_text[:120],
+                )
                 _replan_msg = {
                     "role": "user",
-                    "content": [{"type": "text", "text": (
-                        "[CLAF-REPLAN] The previous approach failed and you started "
-                        "to give up. Do NOT stop, do NOT ask the operator, do NOT "
-                        "look for local files. Pick a DIFFERENT tool for the same "
-                        "goal and call it THIS turn. If a tab call timed out, try "
-                        "mcp__sensei__browse or mcp__sensei__screenshot. If a click "
-                        "failed, try mcp__sensei__js_eval. Act with a tool now."
-                    )}],
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "[CLAF-REPLAN] The previous approach failed and you started "
+                                "to give up. Do NOT stop, do NOT ask the operator, do NOT "
+                                "look for local files. Pick a DIFFERENT tool for the same "
+                                "goal and call it THIS turn. If a tab call timed out, try "
+                                "mcp__sensei__browse or mcp__sensei__screenshot. If a click "
+                                "failed, try mcp__sensei__js_eval. Act with a tool now."
+                            ),
+                        }
+                    ],
                 }
                 # Cerebras rejects empty assistant content blocks (assistant
                 # messages with content=[] or content=[{type:text,text:""}]).
@@ -3770,27 +4236,37 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 for _m in list(body.get("messages", [])):
                     if _m.get("role") == "assistant":
                         _c = _m.get("content", [])
-                        if isinstance(_c, list) and all(
-                            isinstance(_b, dict) and not _b.get("text", "").strip()
-                            and _b.get("type") == "text"
-                            for _b in _c
-                        ) and _c:
+                        if (
+                            isinstance(_c, list)
+                            and all(
+                                isinstance(_b, dict)
+                                and not _b.get("text", "").strip()
+                                and _b.get("type") == "text"
+                                for _b in _c
+                            )
+                            and _c
+                        ):
                             continue  # skip empty assistant turns
                     _clean_msgs.append(_m)
                 body["messages"] = _clean_msgs + [_replan_msg]
                 body["_claf_replanned"] = True
                 try:
                     _rp_start = time.monotonic()
-                    content_blocks, usage, used_react, assistant_text, tool_use = \
+                    content_blocks, usage, used_react, assistant_text, tool_use = (
                         await asyncio.to_thread(_dispatch_provider, _replan_provider)
+                    )
                     _record_dispatch("replan", _replan_provider, _rp_start, time.monotonic())
                     turn["redispatch_count"] = turn.get("redispatch_count", 0) + 1
                     provider = _replan_provider
                     turn["provider"] = provider.name
                     turn["provider_pool"] = provider.pool
                     turn["model"] = provider.model
-                    log("replan_redispatch_done", provider=_replan_provider.name,
-                        tool_use=tool_use, out_chars=len(assistant_text or ""))
+                    log(
+                        "replan_redispatch_done",
+                        provider=_replan_provider.name,
+                        tool_use=tool_use,
+                        out_chars=len(assistant_text or ""),
+                    )
                 except Exception as _replan_exc:
                     log("replan_redispatch_failed", error=str(_replan_exc))
 
@@ -3811,7 +4287,11 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     if trickle_degrade_note:
         assistant_text = (assistant_text or "") + "\n\n" + trickle_degrade_note
         # Repack content blocks to surface the note in the final response.
-        if content_blocks and isinstance(content_blocks[0], dict) and content_blocks[0].get("type") == "text":
+        if (
+            content_blocks
+            and isinstance(content_blocks[0], dict)
+            and content_blocks[0].get("type") == "text"
+        ):
             content_blocks[0] = {"type": "text", "text": assistant_text}
         else:
             content_blocks.append({"type": "text", "text": trickle_degrade_note})
@@ -3823,8 +4303,8 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
     log(
         "response_out",
         turn_id=turn["turn_id"],
-        tier=getattr(provider, 'tier', None),
-        name=getattr(provider, 'name', 'unknown'),
+        tier=getattr(provider, "tier", None),
+        name=getattr(provider, "name", "unknown"),
         out_chars=len(assistant_text),
         tool_use=tool_use,
         tool_use_count=sum(1 for b in content_blocks if b.get("type") == "tool_use"),
@@ -3837,7 +4317,7 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
         "assistant",
         content_blocks,
         model=requested_model,
-        provider=getattr(provider, 'name', 'unknown'),
+        provider=getattr(provider, "name", "unknown"),
     )
     if trickle_reservation:
         throttle.commit(trickle_reservation)
@@ -3861,19 +4341,26 @@ if __name__ == "__main__":
 
     if LOCAL_MODEL and OLLAMA_URL:
         import threading
+
         def _prewarm():
             base = OLLAMA_URL.replace("/api/chat", "")
             ctx = int(os.environ.get("CLAF_OLLAMA_CTX", "2048"))
             try:
                 with httpx.Client(timeout=180.0) as c:
-                    c.post(f"{base}/api/generate", json={
-                        "model": LOCAL_MODEL, "prompt": "hi", "stream": False,
-                        "keep_alive": _OLLAMA_KEEP_ALIVE,
-                        "options": {"num_ctx": ctx},
-                    })
+                    c.post(
+                        f"{base}/api/generate",
+                        json={
+                            "model": LOCAL_MODEL,
+                            "prompt": "hi",
+                            "stream": False,
+                            "keep_alive": _OLLAMA_KEEP_ALIVE,
+                            "options": {"num_ctx": ctx},
+                        },
+                    )
                 print(f"[prewarm] {LOCAL_MODEL} loaded (keep_alive={_OLLAMA_KEEP_ALIVE})")
             except Exception as e:
                 print(f"[prewarm] warning: {e}")
+
         threading.Thread(target=_prewarm, daemon=True).start()
 
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")
@@ -3891,9 +4378,9 @@ def claf_apply_tool_bridge(body: dict) -> tuple[dict, bool]:
     return body, False
 
 
-def claf_wrap_ollama_text_as_anthropic(raw_text: str, model: str,
-                                        used_react: bool, input_tokens: int = 0,
-                                        output_tokens: int = 0) -> dict:
+def claf_wrap_ollama_text_as_anthropic(
+    raw_text: str, model: str, used_react: bool, input_tokens: int = 0, output_tokens: int = 0
+) -> dict:
     """Parse Ollama's raw assistant text and wrap as Anthropic /v1/messages
     response. If used_react is True, parse <tool_call> blocks into tool_use."""
     if used_react:
@@ -3902,6 +4389,9 @@ def claf_wrap_ollama_text_as_anthropic(raw_text: str, model: str,
         blocks = [{"type": "text", "text": raw_text}]
         stop = "end_turn"
     return tool_bridge.build_anthropic_response(
-        blocks, stop, model=model,
-        input_tokens=input_tokens, output_tokens=output_tokens,
+        blocks,
+        stop,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )

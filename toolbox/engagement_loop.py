@@ -5,6 +5,7 @@ The loop reads ~/MD/HANDOFF.md, claims the first ⏳ task, executes its listed
 steps, and marks it ✅ or ⛔ BLOCKED. It logs an internal Q&A transcript and
 posts engagement updates back to HANDOFF.md.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,8 +37,17 @@ import claf_permissions
 
 # Steps that should pause for operator confirmation before running.
 _RISKY_PREFIXES = (
-    "rm ", "sudo ", "mkfs", "fdisk", "dd ", "git push", "git reset",
-    "git rebase", "deploy", "systemctl restart", "systemctl stop",
+    "rm ",
+    "sudo ",
+    "mkfs",
+    "fdisk",
+    "dd ",
+    "git push",
+    "git reset",
+    "git rebase",
+    "deploy",
+    "systemctl restart",
+    "systemctl stop",
 )
 
 
@@ -77,7 +87,7 @@ def _find_first_task(text: str, status: str | None = None) -> tuple[int, int, di
     for match in pattern.finditer(text):
         start = match.start()
         # Find end: next ### at start of line or end of file
-        next_heading = re.search(r"\n###\s+", text[start + 1:])
+        next_heading = re.search(r"\n###\s+", text[start + 1 :])
         end = start + 1 + next_heading.start() if next_heading else len(text)
         block = text[start:end]
         task = {
@@ -124,7 +134,12 @@ def _is_risky(step: str) -> bool:
 
 
 def _looks_like_shell(step: str) -> bool:
-    return bool(re.search(r"^(python3|bash|sh|ls|cat|grep|curl|cd\s|mkdir|cp|mv|systemctl|git\s(?!push|reset|rebase)|tail|head|find|which|ps|top|df|du|journalctl)", step.strip()))
+    return bool(
+        re.search(
+            r"^(python3|bash|sh|ls|cat|grep|curl|cd\s|mkdir|cp|mv|systemctl|git\s(?!push|reset|rebase)|tail|head|find|which|ps|top|df|du|journalctl)",
+            step.strip(),
+        )
+    )
 
 
 def _extract_command(step: str) -> str:
@@ -136,7 +151,7 @@ def _extract_command(step: str) -> str:
     # Strip common prefixes
     for prefix in ("Run:", "run", "Execute:", "execute", "Step:", "Use"):
         if step.lower().startswith(prefix.lower()):
-            step = step[len(prefix):].strip()
+            step = step[len(prefix) :].strip()
             if step.startswith(":"):
                 step = step[1:].strip()
     return step.strip()
@@ -154,8 +169,13 @@ def _run_shell(cmd: str, timeout: int = 120) -> dict:
         )
         output = (result.stdout or "").strip()
         err = (result.stderr or "").strip()
-        _log("shell_done", command=cmd, returncode=result.returncode,
-             stdout=output[:500], stderr=err[:500])
+        _log(
+            "shell_done",
+            command=cmd,
+            returncode=result.returncode,
+            stdout=output[:500],
+            stderr=err[:500],
+        )
         return {
             "success": result.returncode == 0,
             "returncode": result.returncode,
@@ -173,10 +193,12 @@ def _run_shell(cmd: str, timeout: int = 120) -> dict:
 def _call_claf(prompt: str, model: str = "qwen2.5-coder:3b") -> str:
     """Call local CLAF and return the assistant text."""
     _log("claf_start", prompt=prompt[:200])
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode("utf-8")
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+    ).encode("utf-8")
     req = urllib.request.Request(
         CLAF_URL,
         data=body,
@@ -273,7 +295,9 @@ def _mark_task(text: str, start: int, end: int, status: str, result: str) -> str
         new_heading = block.replace("### ⏳", "### ⏸️", 1).replace("### 🔄", "### ⏸️", 1)
         summary = f"\n**Engagement result (PAUSED {today}):** {result}\n"
     else:
-        new_heading = block.replace("### ⏳", "### ⛔ BLOCKED", 1).replace("### 🔄", "### ⛔ BLOCKED", 1)
+        new_heading = block.replace("### ⏳", "### ⛔ BLOCKED", 1).replace(
+            "### 🔄", "### ⛔ BLOCKED", 1
+        )
         summary = f"\n**Engagement result (BLOCKED {today}):** {result}\n"
     new_block = new_heading.rstrip() + summary
     return text[:start] + new_block + text[end:]
@@ -314,11 +338,13 @@ def _build_checkpoint_text(
         lines.append(f"- {step}")
     if not remaining_steps:
         lines.append("- (no remaining steps)")
-    lines.extend([
-        "",
-        "Continue? Re-run `python3 ~/projects/claf/toolbox/engagement_loop.py` to resume from the next step with a fresh context window.",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "Continue? Re-run `python3 ~/projects/claf/toolbox/engagement_loop.py` to resume from the next step with a fresh context window.",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -463,8 +489,9 @@ def run_once(dry_run: bool = False) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Engagement loop for HANDOFF.md")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Plan only; do not modify HANDOFF.md")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Plan only; do not modify HANDOFF.md"
+    )
     args = parser.parse_args()
     result = run_once(dry_run=args.dry_run)
     print(result)

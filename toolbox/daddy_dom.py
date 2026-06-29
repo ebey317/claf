@@ -3,11 +3,11 @@
 
 Wraps ~/projects/claf/tools/daddy_dom.py and returns a clean summary.
 """
+
 import json
 import subprocess
 import sys
 from pathlib import Path
-
 
 DEFAULT_OUTPUT = Path.home() / "projects" / "claf" / "tools" / "daddy_dom_output.json"
 TOOL_PATH = Path.home() / "projects" / "claf" / "tools" / "daddy_dom.py"

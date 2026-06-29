@@ -61,6 +61,7 @@ def _log(msg: str):
 
 # ─── DB (same schema as secretary) ────────────────────────────────────────────
 
+
 def _db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -69,8 +70,7 @@ def _db() -> sqlite3.Connection:
 
 def _ensure_tables():
     conn = _db()
-    conn.executescript(
-        """
+    conn.executescript("""
         CREATE TABLE IF NOT EXISTS tasks (
             task_id TEXT PRIMARY KEY,
             goal TEXT NOT NULL,
@@ -108,8 +108,7 @@ def _ensure_tables():
             worker_id TEXT NOT NULL,
             expires_ts TEXT NOT NULL
         );
-    """
-    )
+    """)
     try:
         conn.execute("ALTER TABLE tasks ADD COLUMN profile TEXT NOT NULL DEFAULT 'full'")
     except sqlite3.OperationalError:
@@ -235,7 +234,10 @@ def _lease_release(task_id: str):
 
 # ─── CLAF helpers ─────────────────────────────────────────────────────────────
 
-def _claf_call(messages: list, tools: list | None = None, system: str = "", max_tokens: int = 1024) -> dict:
+
+def _claf_call(
+    messages: list, tools: list | None = None, system: str = "", max_tokens: int = 1024
+) -> dict:
     """Call CLAF /v1/messages. Returns Anthropic-format response dict."""
     payload = {
         "model": "claude-sonnet-4-6",
@@ -266,14 +268,42 @@ def _claf_call(messages: list, tools: list | None = None, system: str = "", max_
 # ─── Tool execution ───────────────────────────────────────────────────────────
 
 _AGENT_TOOLS = [
-    {"name": "bash", "description": "Run a shell command on this machine.",
-     "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "read_file", "description": "Read a local file (first 4KB).",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
-    {"name": "write_file", "description": "Write or create a local file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-    {"name": "done", "description": "Signal task completion with a result summary.",
-     "input_schema": {"type": "object", "properties": {"result": {"type": "string"}}, "required": ["result"]}},
+    {
+        "name": "bash",
+        "description": "Run a shell command on this machine.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": "Read a local file (first 4KB).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": "Write or create a local file.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "done",
+        "description": "Signal task completion with a result summary.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "required": ["result"],
+        },
+    },
 ]
 
 DANGEROUS_PATTERNS = [
@@ -337,6 +367,7 @@ def _exec_tool(name: str, args: dict) -> str:
 
 
 # ─── Context seeding ──────────────────────────────────────────────────────────
+
 
 def _read_latest_context() -> str:
     files = sorted(CONTEXT_DIR.glob("context_*.txt"))
@@ -427,7 +458,11 @@ def _execute_task(task: dict):
             messages.append({"role": "assistant", "content": content})
 
             # Extract text and check for natural completion
-            text_parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+            text_parts = [
+                b.get("text", "")
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
+            ]
             full_text = " ".join(text_parts)
 
             if stop_reason == "end_turn":
@@ -467,18 +502,22 @@ def _execute_task(task: dict):
                 if result_text.startswith("__DONE__:"):
                     _task_set_status(task_id, "completed")
                     completed = True
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": use_id,
-                        "content": result_text[9:],
-                    })
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": use_id,
+                            "content": result_text[9:],
+                        }
+                    )
                     break
 
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": use_id,
-                    "content": result_text,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": use_id,
+                        "content": result_text,
+                    }
+                )
 
             if completed:
                 break
@@ -538,6 +577,7 @@ def _worker_loop():
 
 # ─── HTTP status server ───────────────────────────────────────────────────────
 
+
 def _http_server():
     try:
         from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -559,13 +599,15 @@ def _http_server():
                     tasks = _task_list()
                     queued = len([t for t in tasks if t["status"] == "queued"])
                     executing = len([t for t in tasks if t["status"] == "executing"])
-                    self._send_json({
-                        "ok": True,
-                        "claf": CLAF_URL,
-                        "queued": queued,
-                        "executing": executing,
-                        "active_workers": _active_workers,
-                    })
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "claf": CLAF_URL,
+                            "queued": queued,
+                            "executing": executing,
+                            "active_workers": _active_workers,
+                        }
+                    )
                 elif self.path == "/agent/tasks":
                     self._send_json({"tasks": _task_list()})
                 else:
@@ -584,7 +626,9 @@ def _http_server():
                     if not goal:
                         self._send_json({"error": "goal required"}, code=400)
                         return
-                    t = _task_create(goal, data.get("session", "agent"), data.get("profile", "full"))
+                    t = _task_create(
+                        goal, data.get("session", "agent"), data.get("profile", "full")
+                    )
                     self._send_json({"ok": True, "task": t}, code=201)
                 else:
                     self._send_json({"error": "not found"}, code=404)
@@ -597,6 +641,7 @@ def _http_server():
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="CLAF Agent Runner")
@@ -638,4 +683,5 @@ def main():
 
 if __name__ == "__main__":
     import traceback
+
     main()

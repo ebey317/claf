@@ -1,15 +1,32 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-.eggs/
+*.py[cod]
+*$py.class
+*.so
+*.egg
 *.egg-info/
+.eggs/
+build/
+dist/
+develop-eggs/
+downloads/
+parts/
+sdist/
+wheels/
+share/python-wheels/
+MANIFEST
+.python-version
+Pipfile.lock
+poetry.lock
 
 # Virtual environments
 .venv/
 venv/
 env/
 lib/
+ENV/
+env.bak/
+venv.bak/
 
 # Secrets and local config — NEVER commit these
 .env
@@ -28,6 +45,8 @@ sensei_mcp_server.log
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3
 
 # Backup / temp files
 *.backup.*
@@ -37,18 +56,46 @@ sensei_mcp_server.log
 *.pre_bridge
 *.pre_splice*
 *.orig
+*.tmp
+*.rej
 
 # Session / transcript artifacts (internal, non-reviewable)
 SESSION_TRANSCRIPT_*.md
 latency_summary.json
 C[0-9][0-9]_*.md
 
+# Type-checker / linter caches
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Testing / coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
 # OS
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 # Editor
 .idea/
 .vscode/
 *.swp
+*.swo
 *~

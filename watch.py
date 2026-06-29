@@ -17,8 +17,9 @@ import sys
 import time
 from pathlib import Path
 
-
-LOG_FILE = Path(os.environ.get("CLAF_LOG_FILE", str(Path.home() / "projects/claf/orchestrator.log")))
+LOG_FILE = Path(
+    os.environ.get("CLAF_LOG_FILE", str(Path.home() / "projects/claf/orchestrator.log"))
+)
 
 
 def render(event: dict) -> str:

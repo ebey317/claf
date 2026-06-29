@@ -13,6 +13,7 @@ client is driving:
 Mode is set via CLAF_PERMISSION_MODE env var or ~/.claf/settings.json.
 Shift+Tab cycles: default → acceptEdits → plan → auto → default.
 """
+
 from __future__ import annotations
 
 import json
@@ -93,15 +94,47 @@ MODE = _ModeProxy()
 
 # Bash commands considered safe in acceptEdits mode (matches Claude Code docs).
 _ACCEPT_EDITS_SAFE_BASH = {
-    "mkdir", "touch", "mv", "cp", "rm", "rmdir", "sed", "cat", "ls",
-    "grep", "rg", "find", "head", "tail", "wc", "sort", "uniq", "cut",
-    "tr", "diff", "xargs", "echo", "printf", "pwd", "cd", "basename",
-    "dirname", "readlink", "file", "stat", "which", "command", "type",
+    "mkdir",
+    "touch",
+    "mv",
+    "cp",
+    "rm",
+    "rmdir",
+    "sed",
+    "cat",
+    "ls",
+    "grep",
+    "rg",
+    "find",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "uniq",
+    "cut",
+    "tr",
+    "diff",
+    "xargs",
+    "echo",
+    "printf",
+    "pwd",
+    "cd",
+    "basename",
+    "dirname",
+    "readlink",
+    "file",
+    "stat",
+    "which",
+    "command",
+    "type",
 }
 
 # Commands that are never auto-approved, even in auto / bypass.
 _ALWAYS_BLOCKED = {
-    "sudo", "su", "doas", "pkexec",
+    "sudo",
+    "su",
+    "doas",
+    "pkexec",
 }
 
 # Destructive filesystem patterns that stay gated.

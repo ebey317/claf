@@ -9,14 +9,18 @@ Proves the local-first browser pipeline:
 Usage:
     python3 tests/probes/sensei_tab_probe.py https://wwe.com
 """
+
 import json, subprocess, sys, os, time
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "https://wwe.com"
 
 proc = subprocess.Popen(
     [sys.executable, os.path.expanduser("~/projects/master-ai/sensei_mcp_server.py")],
-    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    text=True, env={**os.environ, "SENSEI_HEADLESS": "0"},
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+    env={**os.environ, "SENSEI_HEADLESS": "0"},
 )
 
 
@@ -29,11 +33,15 @@ def call(method, params=None, req_id=None):
     return json.loads(proc.stdout.readline().strip())
 
 
-call("initialize", {
-    "protocolVersion": "2024-11-05",
-    "capabilities": {},
-    "clientInfo": {"name": "sensei-probe", "version": "1.0"},
-}, 1)
+call(
+    "initialize",
+    {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {},
+        "clientInfo": {"name": "sensei-probe", "version": "1.0"},
+    },
+    1,
+)
 
 print(f"=== TAB_CREATE {URL} ===")
 r = call("tools/call", {"name": "tab_create", "arguments": {"url": URL}}, 2)

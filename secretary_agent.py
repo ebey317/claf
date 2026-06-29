@@ -48,9 +48,11 @@ try:
         def write(self, s):
             _orig_stderr.write(s)
             _log_file.write(s)
+
         def flush(self):
             _orig_stderr.flush()
             _log_file.flush()
+
         def __getattr__(self, name):
             return getattr(_orig_stderr, name)
 
@@ -59,6 +61,7 @@ except Exception:
     pass
 
 # ─── DB init ──────────────────────────────────────────────────────────────────
+
 
 def _db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -141,6 +144,7 @@ def _uid() -> str:
 
 # ─── DB helpers ───────────────────────────────────────────────────────────────
 
+
 def _task_create(goal: str, session: str, profile: str = "full") -> dict:
     conn = _db()
     task_id = _uid()
@@ -162,9 +166,12 @@ def _task_get(task_id: str) -> dict:
     if not row:
         conn.close()
         return {}
-    steps = [dict(r) for r in conn.execute(
-        "SELECT * FROM task_steps WHERE task_id=? ORDER BY turn_num", (task_id,)
-    )]
+    steps = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM task_steps WHERE task_id=? ORDER BY turn_num", (task_id,)
+        )
+    ]
     conn.close()
     d = dict(row)
     d["steps"] = steps
@@ -190,9 +197,7 @@ def _task_list(status_filter: str = None) -> list:
             (status_filter,),
         ).fetchall()
     else:
-        rows = conn.execute(
-            "SELECT * FROM tasks ORDER BY created_ts DESC LIMIT 50"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM tasks ORDER BY created_ts DESC LIMIT 50").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -266,6 +271,7 @@ def _lease_release(task_id: str):
 
 # ─── Bridge helpers (copied from sensei_mcp_server.py) ───────────────────────
 
+
 def _http(method: str, url: str, body=None, timeout=5.0) -> dict:
     data = None
     headers = {"Accept": "application/json"}
@@ -323,7 +329,9 @@ def _await_result(action_id: str, session: str, wait: int = BRIDGE_WAIT) -> dict
             # Only return when bridge confirms the action is done (ok:true + result present).
             # Pending responses also include action_id so we can't use that as the signal.
             if j.get("ok") and j.get("result") is not None:
-                _log(f"result received action_id={action_id} verdict={j.get('result',{}).get('verdict','?')}")
+                _log(
+                    f"result received action_id={action_id} verdict={j.get('result',{}).get('verdict','?')}"
+                )
                 return j
         time.sleep(0.4)
     _log(f"await timeout action_id={action_id}")
@@ -345,8 +353,7 @@ def _action_id_from(push_resp: dict):
 
 def _dispatch_browser(kind: str, payload: dict, session: str) -> dict:
     if not _bridge_alive():
-        return {"ok": False, "reason": "bridge_unreachable",
-                "hint": "Open Chrome side panel."}
+        return {"ok": False, "reason": "bridge_unreachable", "hint": "Open Chrome side panel."}
     push = _push_action(kind, payload, session)
     if not push.get("ok"):
         return {"ok": False, "reason": "push_failed"}
@@ -356,6 +363,7 @@ def _dispatch_browser(kind: str, payload: dict, session: str) -> dict:
 
 
 # ─── Tool execution (called inside the agent loop) ───────────────────────────
+
 
 def _exec_tool(name: str, args: dict, session: str) -> str:
     """Execute a tool call from the agent loop. Returns text result."""
@@ -393,9 +401,7 @@ def _exec_tool(name: str, args: dict, session: str) -> str:
             cmd = str(args.get("command", "")).strip()
             if not cmd:
                 return "bash: command required"
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=30
-            )
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
             out = (result.stdout or "").strip()
             err = (result.stderr or "").strip()
             rep = out if out else err if err else f"(exit {result.returncode})"
@@ -431,30 +437,83 @@ def _exec_tool(name: str, args: dict, session: str) -> str:
 # ─── Agent loop tools (sent to LLM as tool schemas) ──────────────────────────
 
 _AGENT_TOOLS = [
-    {"name": "browser_navigate", "description": "Navigate browser to a URL.",
-     "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
-    {"name": "browser_click", "description": "Click an element by CSS selector or visible text.",
-     "input_schema": {"type": "object", "properties": {"selector": {"type": "string"}}, "required": ["selector"]}},
-    {"name": "browser_fill", "description": "Type text into a form field.",
-     "input_schema": {"type": "object",
-                      "properties": {"selector": {"type": "string"}, "value": {"type": "string"}},
-                      "required": ["selector", "value"]}},
-    {"name": "browser_read", "description": "Read visible content of the current page.",
-     "input_schema": {"type": "object", "properties": {}}},
-    {"name": "web_search", "description": "Google search query, opens results in browser.",
-     "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
-    {"name": "bash", "description": "Run a shell command on this machine.",
-     "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "read_file", "description": "Read a local file (first 4KB).",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
-    {"name": "write_file", "description": "Write or create a local file.",
-     "input_schema": {"type": "object",
-                      "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
-                      "required": ["path", "content"]}},
-    {"name": "done", "description": "Signal task completion with a result summary.",
-     "input_schema": {"type": "object",
-                      "properties": {"result": {"type": "string"}},
-                      "required": ["result"]}},
+    {
+        "name": "browser_navigate",
+        "description": "Navigate browser to a URL.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"url": {"type": "string"}},
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "browser_click",
+        "description": "Click an element by CSS selector or visible text.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"selector": {"type": "string"}},
+            "required": ["selector"],
+        },
+    },
+    {
+        "name": "browser_fill",
+        "description": "Type text into a form field.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"selector": {"type": "string"}, "value": {"type": "string"}},
+            "required": ["selector", "value"],
+        },
+    },
+    {
+        "name": "browser_read",
+        "description": "Read visible content of the current page.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "web_search",
+        "description": "Google search query, opens results in browser.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "bash",
+        "description": "Run a shell command on this machine.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": "Read a local file (first 4KB).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": "Write or create a local file.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "done",
+        "description": "Signal task completion with a result summary.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "required": ["result"],
+        },
+    },
 ]
 
 # ─── Profile-based tool loading ──────────────────────────────────────────────
@@ -616,18 +675,22 @@ def _run_loop(task_id: str, goal: str, session: str, worker_id: str, profile: st
                 if result_text.startswith("__DONE__:"):
                     _task_set_status(task_id, "completed")
                     completed = True
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": use_id,
-                        "content": result_text[9:],
-                    })
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": use_id,
+                            "content": result_text[9:],
+                        }
+                    )
                     break
 
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": use_id,
-                    "content": result_text,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": use_id,
+                        "content": result_text,
+                    }
+                )
 
                 step_history.append({"directive": directive_sig, "result": result_text[:100]})
 
@@ -666,6 +729,7 @@ def _start_task(task_id: str, goal: str, session: str, profile: str = "full"):
 
 # ─── Uniform result envelope ──────────────────────────────────────────────────
 
+
 def _ok(result=None, task_id=None, **kwargs) -> dict:
     return {"ok": True, "result": result, "task_id": task_id, **kwargs}
 
@@ -675,6 +739,7 @@ def _fail(reason: str, task_id=None, **kwargs) -> dict:
 
 
 # ─── MCP tool handlers ────────────────────────────────────────────────────────
+
 
 def _mcp_intake_task(args: dict) -> dict:
     goal = str(args.get("goal") or "").strip()
@@ -716,8 +781,9 @@ def _mcp_run_task(args: dict) -> dict:
     if status not in ("queued", "paused"):
         return _fail(f"cannot run task in status: {status}", task_id=task_id)
     _task_set_status(task_id, "queued")
-    _start_task(task_id, task["goal"], task.get("session", BRIDGE_SESSION),
-                task.get("profile", "full"))
+    _start_task(
+        task_id, task["goal"], task.get("session", BRIDGE_SESSION), task.get("profile", "full")
+    )
     return _ok(result={"status": "started"}, task_id=task_id)
 
 
@@ -746,8 +812,9 @@ def _mcp_resume_task(args: dict) -> dict:
     with _active_lock:
         _active_tasks.pop(task_id, None)
     _task_set_status(task_id, "queued")
-    _start_task(task_id, task["goal"], task.get("session", BRIDGE_SESSION),
-                task.get("profile", "full"))
+    _start_task(
+        task_id, task["goal"], task.get("session", BRIDGE_SESSION), task.get("profile", "full")
+    )
     return _ok(result={"status": "resumed"}, task_id=task_id)
 
 
@@ -778,13 +845,13 @@ def _mcp_get_incidents(args: dict) -> dict:
 
 
 _HANDLERS = {
-    "secretary.intake_task":  _mcp_intake_task,
-    "secretary.get_task":     _mcp_get_task,
-    "secretary.run_task":     _mcp_run_task,
-    "secretary.pause_task":   _mcp_pause_task,
-    "secretary.resume_task":  _mcp_resume_task,
-    "secretary.cancel_task":  _mcp_cancel_task,
-    "secretary.list_tasks":   _mcp_list_tasks,
+    "secretary.intake_task": _mcp_intake_task,
+    "secretary.get_task": _mcp_get_task,
+    "secretary.run_task": _mcp_run_task,
+    "secretary.pause_task": _mcp_pause_task,
+    "secretary.resume_task": _mcp_resume_task,
+    "secretary.cancel_task": _mcp_cancel_task,
+    "secretary.list_tasks": _mcp_list_tasks,
     "secretary.get_incidents": _mcp_get_incidents,
 }
 
@@ -792,54 +859,85 @@ _HANDLERS = {
 # ─── MCP tool schemas ─────────────────────────────────────────────────────────
 
 _MCP_TOOLS = [
-    {"name": "secretary.intake_task",
-     "description": "Create a new autonomous secretary task. Returns task_id immediately. "
-                    "Optional 'profile' restricts the tool set sent to the LLM "
-                    "(filesystem/browser/full); auto-classified from goal if omitted.",
-     "inputSchema": {"type": "object",
-                     "properties": {"goal": {"type": "string"},
-                                    "session": {"type": "string"},
-                                    "profile": {"type": "string",
-                                                "enum": ["filesystem", "browser", "full"]}},
-                     "required": ["goal"]}},
-    {"name": "secretary.get_task",
-     "description": "Get full status and step history for a task.",
-     "inputSchema": {"type": "object",
-                     "properties": {"task_id": {"type": "string"}},
-                     "required": ["task_id"]}},
-    {"name": "secretary.run_task",
-     "description": "Start or resume execution of a queued or paused task.",
-     "inputSchema": {"type": "object",
-                     "properties": {"task_id": {"type": "string"}},
-                     "required": ["task_id"]}},
-    {"name": "secretary.pause_task",
-     "description": "Pause a running task after the current step.",
-     "inputSchema": {"type": "object",
-                     "properties": {"task_id": {"type": "string"}},
-                     "required": ["task_id"]}},
-    {"name": "secretary.resume_task",
-     "description": "Resume a paused task.",
-     "inputSchema": {"type": "object",
-                     "properties": {"task_id": {"type": "string"}},
-                     "required": ["task_id"]}},
-    {"name": "secretary.cancel_task",
-     "description": "Abort a running or queued task.",
-     "inputSchema": {"type": "object",
-                     "properties": {"task_id": {"type": "string"}},
-                     "required": ["task_id"]}},
-    {"name": "secretary.list_tasks",
-     "description": "List tasks, optionally filtered by status (queued/executing/completed/failed/cancelled).",
-     "inputSchema": {"type": "object",
-                     "properties": {"status": {"type": "string"}}}},
-    {"name": "secretary.get_incidents",
-     "description": "Get incident log for a task.",
-     "inputSchema": {"type": "object",
-                     "properties": {"task_id": {"type": "string"}},
-                     "required": ["task_id"]}},
+    {
+        "name": "secretary.intake_task",
+        "description": "Create a new autonomous secretary task. Returns task_id immediately. "
+        "Optional 'profile' restricts the tool set sent to the LLM "
+        "(filesystem/browser/full); auto-classified from goal if omitted.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string"},
+                "session": {"type": "string"},
+                "profile": {"type": "string", "enum": ["filesystem", "browser", "full"]},
+            },
+            "required": ["goal"],
+        },
+    },
+    {
+        "name": "secretary.get_task",
+        "description": "Get full status and step history for a task.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "secretary.run_task",
+        "description": "Start or resume execution of a queued or paused task.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "secretary.pause_task",
+        "description": "Pause a running task after the current step.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "secretary.resume_task",
+        "description": "Resume a paused task.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "secretary.cancel_task",
+        "description": "Abort a running or queued task.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "secretary.list_tasks",
+        "description": "List tasks, optionally filtered by status (queued/executing/completed/failed/cancelled).",
+        "inputSchema": {"type": "object", "properties": {"status": {"type": "string"}}},
+    },
+    {
+        "name": "secretary.get_incidents",
+        "description": "Get incident log for a task.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
 ]
 
 
 # ─── JSON-RPC stdio server ────────────────────────────────────────────────────
+
 
 def _send(obj: dict):
     framed = bool(getattr(_send, "_framed", False))
@@ -919,7 +1017,8 @@ def _handle_rpc(msg: dict):
 
     if method == "initialize":
         return {
-            "jsonrpc": "2.0", "id": mid,
+            "jsonrpc": "2.0",
+            "id": mid,
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
@@ -938,27 +1037,40 @@ def _handle_rpc(msg: dict):
         args = params.get("arguments") or {}
         handler = _HANDLERS.get(name)
         if not handler:
-            return {"jsonrpc": "2.0", "id": mid,
-                    "result": {"content": [{"type": "text",
-                                            "text": json.dumps(_fail(f"unknown tool: {name}"))}],
-                               "isError": True}}
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "result": {
+                    "content": [
+                        {"type": "text", "text": json.dumps(_fail(f"unknown tool: {name}"))}
+                    ],
+                    "isError": True,
+                },
+            }
         try:
             result = handler(args if isinstance(args, dict) else {})
             text = json.dumps(result, default=str)
-            return {"jsonrpc": "2.0", "id": mid,
-                    "result": {"content": [{"type": "text", "text": text}]}}
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "result": {"content": [{"type": "text", "text": text}]},
+            }
         except Exception as e:
             err = {"ok": False, "reason": f"handler_error: {e}"}
-            return {"jsonrpc": "2.0", "id": mid,
-                    "result": {"content": [{"type": "text",
-                                            "text": json.dumps(err)}],
-                               "isError": True}}
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "result": {"content": [{"type": "text", "text": json.dumps(err)}], "isError": True},
+            }
 
     if mid is None:
         return None  # notification — drop silently
 
-    return {"jsonrpc": "2.0", "id": mid,
-            "error": {"code": -32601, "message": f"method not found: {method}"}}
+    return {
+        "jsonrpc": "2.0",
+        "id": mid,
+        "error": {"code": -32601, "message": f"method not found: {method}"},
+    }
 
 
 # ─── Standalone mode ──────────────────────────────────────────────────────────
@@ -1006,7 +1118,12 @@ def _autonomous_loop():
                 with _active_lock:
                     if tid in _active_tasks:
                         continue
-                _start_task(tid, task["goal"], task.get("session", BRIDGE_SESSION), task.get("profile", "full"))
+                _start_task(
+                    tid,
+                    task["goal"],
+                    task.get("session", BRIDGE_SESSION),
+                    task.get("profile", "full"),
+                )
                 time.sleep(2)  # stagger starts
             # If no tasks, seed from context
             if not queued and _AUTO_SEED:
@@ -1019,6 +1136,7 @@ def _autonomous_loop():
 
 # ─── HTTP health/stats server (port 8001, background thread) ─────────────────
 
+
 def _http_server():
     try:
         from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -1030,9 +1148,12 @@ def _http_server():
             ).fetchall()
             counts = {r["status"]: r["cnt"] for r in rows}
             total = sum(counts.values())
-            events = [dict(r) for r in conn.execute(
-                "SELECT * FROM task_events ORDER BY ts DESC LIMIT 10"
-            ).fetchall()]
+            events = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM task_events ORDER BY ts DESC LIMIT 10"
+                ).fetchall()
+            ]
             incidents = conn.execute("SELECT COUNT(*) as cnt FROM incidents").fetchone()["cnt"]
             conn.close()
             return {
@@ -1056,13 +1177,15 @@ def _http_server():
 
             def do_GET(self):
                 if self.path == "/agent/health":
-                    self._send_json({
-                        "ok": True,
-                        "claf": _claf_alive(),
-                        "bridge": _bridge_alive(),
-                        "active_tasks": len(_active_tasks),
-                        "db": str(DB_PATH),
-                    })
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "claf": _claf_alive(),
+                            "bridge": _bridge_alive(),
+                            "active_tasks": len(_active_tasks),
+                            "db": str(DB_PATH),
+                        }
+                    )
                 elif self.path == "/agent/stats":
                     self._send_json(_stats_data())
                 elif self.path == "/agent/tasks":
@@ -1095,7 +1218,9 @@ def _http_server():
                     t = _task_create(goal, data.get("session", BRIDGE_SESSION), profile)
                     # In standalone mode, auto-start the task
                     if _STANDALONE:
-                        _start_task(t["task_id"], goal, data.get("session", BRIDGE_SESSION), profile)
+                        _start_task(
+                            t["task_id"], goal, data.get("session", BRIDGE_SESSION), profile
+                        )
                     self._send_json({"ok": True, "task": t}, code=201)
                 else:
                     self._send_json({"error": "not found"}, code=404)
@@ -1108,6 +1233,7 @@ def _http_server():
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
+
 def _resume_interrupted_tasks():
     """On startup, re-queue any task left in executing/planning by a prior crash."""
     stuck = _task_list("executing") + _task_list("planning")
@@ -1118,7 +1244,13 @@ def _resume_interrupted_tasks():
         wid = f"resume-{_uid()[:8]}"
         threading.Thread(
             target=_run_loop,
-            args=(tid, task["goal"], task.get("session", BRIDGE_SESSION), wid, task.get("profile", "full")),
+            args=(
+                tid,
+                task["goal"],
+                task.get("session", BRIDGE_SESSION),
+                wid,
+                task.get("profile", "full"),
+            ),
             daemon=True,
         ).start()
 
@@ -1126,7 +1258,9 @@ def _resume_interrupted_tasks():
 def main():
     global _STANDALONE
     parser = argparse.ArgumentParser(description="Secretary Agent")
-    parser.add_argument("--standalone", action="store_true", help="Run in autonomous mode without MCP stdio")
+    parser.add_argument(
+        "--standalone", action="store_true", help="Run in autonomous mode without MCP stdio"
+    )
     args = parser.parse_args()
     _STANDALONE = args.standalone
 
@@ -1160,8 +1294,11 @@ def main():
         except Exception as e:
             sys.stderr.write(f"[secretary] handler crash: {e}\n")
             sys.stderr.flush()
-            resp = {"jsonrpc": "2.0", "id": (msg or {}).get("id"),
-                    "error": {"code": -32603, "message": f"internal: {e}"}}
+            resp = {
+                "jsonrpc": "2.0",
+                "id": (msg or {}).get("id"),
+                "error": {"code": -32603, "message": f"internal: {e}"},
+            }
         if resp is not None:
             _send(resp)
 

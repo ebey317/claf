@@ -23,7 +23,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Literal
 
-
 Need = Literal["tap", "flash"]
 
 
@@ -34,10 +33,14 @@ class ThrottleState:
     # high hourly/daily caps don't cost money; they just prevent CLAF from
     # self-throttling the free tier into local-only. Paid tiers are explicit
     # escalation only, so a high cap here doesn't increase spend.
-    flash_budget_hourly: int = int(os.environ.get("CLAF_FLASH_BUDGET_HOURLY", "200"))    # was 5 — free cloud tier, no billing
-    tap_budget_hourly: int = int(os.environ.get("CLAF_TAP_BUDGET_HOURLY", "200"))      # was 15
-    token_budget_daily: int = int(os.environ.get("CLAF_TOKEN_BUDGET_DAILY", "500000")) # was 25_000 — count informational only
-    emergency_flash_daily: int = int(os.environ.get("CLAF_EMERGENCY_FLASH_DAILY", "10"))   # was 3
+    flash_budget_hourly: int = int(
+        os.environ.get("CLAF_FLASH_BUDGET_HOURLY", "200")
+    )  # was 5 — free cloud tier, no billing
+    tap_budget_hourly: int = int(os.environ.get("CLAF_TAP_BUDGET_HOURLY", "200"))  # was 15
+    token_budget_daily: int = int(
+        os.environ.get("CLAF_TOKEN_BUDGET_DAILY", "500000")
+    )  # was 25_000 — count informational only
+    emergency_flash_daily: int = int(os.environ.get("CLAF_EMERGENCY_FLASH_DAILY", "10"))  # was 3
 
     _flash_used: int = 0
     _tap_used: int = 0
@@ -164,7 +167,11 @@ def degrade_message(need: Need) -> str:
     """Operator-facing string when budget is exhausted, suitable for inclusion
     in a response body when local can't credibly handle the request."""
     snap = snapshot()
-    reset_s = snap["hour_window_resets_in_s"] if need in ("flash", "tap") else snap["day_window_resets_in_s"]
+    reset_s = (
+        snap["hour_window_resets_in_s"]
+        if need in ("flash", "tap")
+        else snap["day_window_resets_in_s"]
+    )
     mins = max(1, reset_s // 60)
     cap_key = need
     used = snap[cap_key]["used"]

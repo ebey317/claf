@@ -5,10 +5,12 @@ Step 1 of the hermes3:3b fine-tune (Path B). Before committing to a train run we
 need to know whether the log actually carries the input context AND the emitted
 tool call, or just routing telemetry. This reports the honest answer.
 """
+
 import json, os, sys, collections, pathlib
 
-LOG = pathlib.Path(os.environ.get(
-    "CLAF_LOG", str(pathlib.Path.home() / "projects/claf/orchestrator.log")))
+LOG = pathlib.Path(
+    os.environ.get("CLAF_LOG", str(pathlib.Path.home() / "projects/claf/orchestrator.log"))
+)
 
 events = collections.Counter()
 keys_by_event: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
@@ -16,8 +18,8 @@ long_string_fields: dict[str, collections.Counter] = collections.defaultdict(col
 sample_by_event: dict[str, dict] = {}
 total = bad = 0
 # Heuristics for "carries content we could train on"
-carries_prompt = collections.Counter()    # events with user-prompt-ish text
-carries_toolcall = collections.Counter()   # events naming an emitted tool
+carries_prompt = collections.Counter()  # events with user-prompt-ish text
+carries_toolcall = collections.Counter()  # events naming an emitted tool
 
 PROMPTY = ("prompt", "messages", "last_user", "user", "text", "input", "query", "snippet")
 TOOLY = ("tool", "tool_use", "tools", "name", "emitted", "completion", "response", "content")
@@ -72,8 +74,12 @@ for name in list(events):
             print(f"     {k}: {v}")
 
 print("\nVERDICT HINTS")
-print(f"  events that carry prompt-ish text:  {sum(carries_prompt.values())} rows across {len(carries_prompt)} event types")
-print(f"  events that name a tool/completion: {sum(carries_toolcall.values())} rows across {len(carries_toolcall)} event types")
+print(
+    f"  events that carry prompt-ish text:  {sum(carries_prompt.values())} rows across {len(carries_prompt)} event types"
+)
+print(
+    f"  events that name a tool/completion: {sum(carries_toolcall.values())} rows across {len(carries_toolcall)} event types"
+)
 print("  -> if NO single event holds BOTH the request messages AND the emitted")
 print("     tool_use, the log is telemetry-only and we must add request/response")
 print("     capture (a logging hook) before harvesting a real dataset.")

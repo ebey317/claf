@@ -8,6 +8,7 @@ Builds a unified index from:
 Used by resolve_app.py and open_app.py so they share the same "memory" of
 what apps exist on the system.
 """
+
 from __future__ import annotations
 
 import configparser
@@ -21,6 +22,7 @@ def _static_apps() -> list[dict]:
     """Return the static _APP_MAP entries as corpus items."""
     # Import open_app lazily to avoid circular imports.
     import importlib.util
+
     spec = importlib.util.spec_from_file_location(
         "open_app", Path(__file__).resolve().parent / "open_app.py"
     )
@@ -29,13 +31,15 @@ def _static_apps() -> list[dict]:
     corpus: list[dict] = []
     for name, cmd in module._APP_MAP.items():
         exe = shutil.which(cmd[0]) if cmd else None
-        corpus.append({
-            "name": name,
-            "aliases": [name],
-            "executable": exe or cmd[0] if cmd else None,
-            "command": cmd,
-            "source": "app_map",
-        })
+        corpus.append(
+            {
+                "name": name,
+                "aliases": [name],
+                "executable": exe or cmd[0] if cmd else None,
+                "command": cmd,
+                "source": "app_map",
+            }
+        )
     return corpus
 
 
@@ -56,13 +60,15 @@ def _path_apps() -> list[dict]:
                         name = entry.name.lower()
                         if name not in seen:
                             seen.add(name)
-                            corpus.append({
-                                "name": entry.name,
-                                "aliases": [entry.name],
-                                "executable": str(entry),
-                                "command": [str(entry)],
-                                "source": "path",
-                            })
+                            corpus.append(
+                                {
+                                    "name": entry.name,
+                                    "aliases": [entry.name],
+                                    "executable": str(entry),
+                                    "command": [str(entry)],
+                                    "source": "path",
+                                }
+                            )
                 except (OSError, PermissionError):
                     continue
         except (OSError, PermissionError):
@@ -113,14 +119,16 @@ def _desktop_apps() -> list[dict]:
                 for kw in keywords.split(";"):
                     if kw.strip():
                         aliases.append(kw.strip())
-                corpus.append({
-                    "name": name,
-                    "aliases": list(dict.fromkeys(a.lower() for a in aliases)),
-                    "executable": exe_path or exe,
-                    "command": [exe_path or exe],
-                    "source": "desktop",
-                    "desktop_file": str(desktop),
-                })
+                corpus.append(
+                    {
+                        "name": name,
+                        "aliases": list(dict.fromkeys(a.lower() for a in aliases)),
+                        "executable": exe_path or exe,
+                        "command": [exe_path or exe],
+                        "source": "desktop",
+                        "desktop_file": str(desktop),
+                    }
+                )
             except Exception:
                 continue
     return corpus
@@ -141,7 +149,9 @@ def build_corpus() -> list[dict]:
     return out
 
 
-def fuzzy_match(query: str, corpus: list[dict], threshold: float = 0.55, top_n: int = 5) -> list[tuple[dict, float]]:
+def fuzzy_match(
+    query: str, corpus: list[dict], threshold: float = 0.55, top_n: int = 5
+) -> list[tuple[dict, float]]:
     """Return corpus items whose names/aliases fuzzy-match the query."""
     query = query.lower().strip()
     if not query:

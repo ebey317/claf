@@ -3,13 +3,17 @@
 
 Inspect local machine state (USB devices, disks, mounts, processes, failed services). No network access.
 """
+
 import subprocess
 import sys
 
-
 ALLOWED_TARGETS = {
     "usb": [
-        ["bash", "-c", "ls -la /dev/disk/by-id /dev/disk/by-path /dev/input/js* 2>/dev/null || echo 'no matching block/input devices'"],
+        [
+            "bash",
+            "-c",
+            "ls -la /dev/disk/by-id /dev/disk/by-path /dev/input/js* 2>/dev/null || echo 'no matching block/input devices'",
+        ],
         ["lsusb"],
     ],
     "disks": [
@@ -95,6 +99,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         try:
             import json
+
             raw_args = json.loads(sys.argv[1])
         except Exception:
             raw_args = {"target": sys.argv[1]}

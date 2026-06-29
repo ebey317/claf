@@ -39,21 +39,59 @@ DANGEROUS_PATTERNS = [
 ]
 
 THERAPY_SIGNALS = {
-    "sad", "depressed", "lonely", "hurt", "cry", "crying", "kill myself",
-    "suicide", "suicidal", "anxious", "anxiety", "scared", "afraid",
-    "need to talk", "feeling down", "empty", "numb", "hopeless",
-    "worthless", "self-harm", "cutting", "overdose", "end it all",
+    "sad",
+    "depressed",
+    "lonely",
+    "hurt",
+    "cry",
+    "crying",
+    "kill myself",
+    "suicide",
+    "suicidal",
+    "anxious",
+    "anxiety",
+    "scared",
+    "afraid",
+    "need to talk",
+    "feeling down",
+    "empty",
+    "numb",
+    "hopeless",
+    "worthless",
+    "self-harm",
+    "cutting",
+    "overdose",
+    "end it all",
 }
 
 KID_SIGNALS = {
-    "mommy", "daddy", "teacher", "school", "homework",
-    "fortnite", "minecraft", "roblox", "pokemon",
+    "mommy",
+    "daddy",
+    "teacher",
+    "school",
+    "homework",
+    "fortnite",
+    "minecraft",
+    "roblox",
+    "pokemon",
 }
 
 WORK_SIGNALS = {
-    "navigate", "click", "fill", "submit", "scrape", "automation",
-    "browser", "website", "login", "password", "form", "url",
-    "go to", "open", "visit",
+    "navigate",
+    "click",
+    "fill",
+    "submit",
+    "scrape",
+    "automation",
+    "browser",
+    "website",
+    "login",
+    "password",
+    "form",
+    "url",
+    "go to",
+    "open",
+    "visit",
 }
 
 
@@ -93,7 +131,7 @@ def build_system_prompt(mode, tools):
             "You are a precise tool executor. Emit EXACTLY one XML block:\n"
             "<tool_call>\n"
             "  <name>TOOL_NAME</name>\n"
-            "  <parameters>{\"key\":\"value\"}</parameters>\n"
+            '  <parameters>{"key":"value"}</parameters>\n'
             "</tool_call>\n"
             "Available tools:\n<tools>\n" + tool_xml + "\n</tools>\n"
             "Rules:\n- Use <tool_call> ONLY when you need a tool.\n"
@@ -138,7 +176,7 @@ def parse_work_response(text, tools):
     pos = 0
     for m in TOOL_CALL_RE.finditer(text):
         if m.start() > pos:
-            before = text[pos:m.start()].strip()
+            before = text[pos : m.start()].strip()
             if before:
                 blocks.append({"type": "text", "text": before})
         name = m.group(1).strip()
@@ -147,12 +185,14 @@ def parse_work_response(text, tools):
             params = json.loads(params_str)
         except json.JSONDecodeError:
             params = {"raw": params_str}
-        blocks.append({
-            "type": "tool_use",
-            "id": f"toolu_{name}_{hash(m.group(0)) & 0xFFFFFFFF:08x}",
-            "name": name,
-            "input": params,
-        })
+        blocks.append(
+            {
+                "type": "tool_use",
+                "id": f"toolu_{name}_{hash(m.group(0)) & 0xFFFFFFFF:08x}",
+                "name": name,
+                "input": params,
+            }
+        )
         pos = m.end()
     if pos < len(text):
         after = text[pos:].strip()

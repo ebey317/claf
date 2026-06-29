@@ -12,6 +12,7 @@ Usage:
     python3 parity/latency_report.py --since 2026-06-12T00:00:00
     python3 parity/latency_report.py --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,10 +43,19 @@ def _pctiles(values: list[float | int]) -> dict[str, float | int]:
     mean = sum(s) / n
     p50 = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
     p95 = s[int(n * 0.95)] if n > 1 else s[0]
-    return {"n": n, "mean": round(mean, 1), "min": s[0], "p50": round(p50, 1), "p95": round(p95, 1), "max": s[-1]}
+    return {
+        "n": n,
+        "mean": round(mean, 1),
+        "min": s[0],
+        "p50": round(p50, 1),
+        "p95": round(p95, 1),
+        "max": s[-1],
+    }
 
 
-def _parse_log(path: Path, since: datetime | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def _parse_log(
+    path: Path, since: datetime | None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     requests: list[dict[str, Any]] = []
     responses: list[dict[str, Any]] = []
     summaries: list[dict[str, Any]] = []
@@ -73,7 +83,10 @@ def _parse_log(path: Path, since: datetime | None) -> tuple[list[dict[str, Any]]
                 responses.append(ev)
             elif ev_type == "turn_summary":
                 summaries.append(ev)
-            elif ev_type in ("stale_auto_task_cleared_skipping_redispatch", "stale_model_task_skipping_redispatch"):
+            elif ev_type in (
+                "stale_auto_task_cleared_skipping_redispatch",
+                "stale_model_task_skipping_redispatch",
+            ):
                 stale_tasks.append(ev)
     return requests, responses, summaries, stale_tasks
 
@@ -143,8 +156,24 @@ def _inter_turn_gaps(turns: list[dict[str, Any]]) -> dict[str, list[int]]:
 
 
 def _print_table(turns: list[dict[str, Any]]) -> None:
-    headers = ["ts", "turn_id", "conv_fp", "provider", "total", "route", "dispatches", "redispatch", "tool_use", "status"]
-    print(" ".join(f"{h:<18}" if h in ("ts", "turn_id") else f"{h:<12}" if h == "conv_fp" else f"{h:<10}" for h in headers))
+    headers = [
+        "ts",
+        "turn_id",
+        "conv_fp",
+        "provider",
+        "total",
+        "route",
+        "dispatches",
+        "redispatch",
+        "tool_use",
+        "status",
+    ]
+    print(
+        " ".join(
+            f"{h:<18}" if h in ("ts", "turn_id") else f"{h:<12}" if h == "conv_fp" else f"{h:<10}"
+            for h in headers
+        )
+    )
     print("-" * 130)
     for t in turns:
         disp_str = " ".join(f"{k}={v['mean']}ms" for k, v in t["dispatch_summary"].items())
@@ -162,31 +191,51 @@ def _print_table(turns: list[dict[str, Any]]) -> None:
         )
 
 
-def _print_footer(turns: list[dict[str, Any]], gaps: dict[str, list[int]], stale_tasks: list[dict[str, Any]]) -> dict[str, Any]:
+def _print_footer(
+    turns: list[dict[str, Any]], gaps: dict[str, list[int]], stale_tasks: list[dict[str, Any]]
+) -> dict[str, Any]:
     intra = _pctiles([t["total_ms"] for t in turns])
     all_gaps = [g for gg in gaps.values() for g in gg]
     gap_stats = _pctiles(all_gaps)
     redispatch_hist: dict[str, int] = defaultdict(int)
     for t in turns:
         redispatch_hist[str(t["redispatch_count"])] += 1
-    pct_redispatched = round(100 * sum(1 for t in turns if t["redispatch_count"] > 0) / len(turns), 1) if turns else 0
+    pct_redispatched = (
+        round(100 * sum(1 for t in turns if t["redispatch_count"] > 0) / len(turns), 1)
+        if turns
+        else 0
+    )
 
-    stale_auto = sum(1 for s in stale_tasks if s.get("event") == "stale_auto_task_cleared_skipping_redispatch")
-    stale_model = sum(1 for s in stale_tasks if s.get("event") == "stale_model_task_skipping_redispatch")
+    stale_auto = sum(
+        1 for s in stale_tasks if s.get("event") == "stale_auto_task_cleared_skipping_redispatch"
+    )
+    stale_model = sum(
+        1 for s in stale_tasks if s.get("event") == "stale_model_task_skipping_redispatch"
+    )
 
     print("\n=== Footer ===")
-    print(f"Intra-turn total_ms:     n={intra['n']} mean={intra['mean']} p50={intra['p50']} p95={intra['p95']} max={intra['max']}")
-    print(f"Inter-turn gap_ms:       n={gap_stats['n']} mean={gap_stats['mean']} p50={gap_stats['p50']} p95={gap_stats['p95']} max={gap_stats['max']}")
+    print(
+        f"Intra-turn total_ms:     n={intra['n']} mean={intra['mean']} p50={intra['p50']} p95={intra['p95']} max={intra['max']}"
+    )
+    print(
+        f"Inter-turn gap_ms:       n={gap_stats['n']} mean={gap_stats['mean']} p50={gap_stats['p50']} p95={gap_stats['p95']} max={gap_stats['max']}"
+    )
     print(f"Redispatch histogram:    {dict(redispatch_hist)}")
     print(f"Turns with ≥1 redispatch: {pct_redispatched}%")
-    print(f"Stale tasks skipped:     auto={stale_auto} model={stale_model} total={stale_auto + stale_model}")
+    print(
+        f"Stale tasks skipped:     auto={stale_auto} model={stale_model} total={stale_auto + stale_model}"
+    )
 
     return {
         "intra_turn_ms": intra,
         "inter_turn_gap_ms": gap_stats,
         "redispatch_histogram": dict(redispatch_hist),
         "pct_turns_with_redispatch": pct_redispatched,
-        "stale_tasks": {"auto": stale_auto, "model": stale_model, "total": stale_auto + stale_model},
+        "stale_tasks": {
+            "auto": stale_auto,
+            "model": stale_model,
+            "total": stale_auto + stale_model,
+        },
     }
 
 
@@ -211,7 +260,9 @@ def main() -> int:
             "intra_turn_ms": _pctiles([t["total_ms"] for t in turns]),
             "inter_turn_gap_ms": _pctiles([g for gg in gaps.values() for g in gg]),
             "redispatch_histogram": dict(
-                sorted((str(k), v) for k, v in {str(t["redispatch_count"]): 0 for t in turns}.items())
+                sorted(
+                    (str(k), v) for k, v in {str(t["redispatch_count"]): 0 for t in turns}.items()
+                )
             ),
         }
         # Proper histogram.
@@ -220,11 +271,23 @@ def main() -> int:
             hist[str(t["redispatch_count"])] += 1
         footer["redispatch_histogram"] = dict(hist)
         footer["pct_turns_with_redispatch"] = (
-            round(100 * sum(1 for t in turns if t["redispatch_count"] > 0) / len(turns), 1) if turns else 0
+            round(100 * sum(1 for t in turns if t["redispatch_count"] > 0) / len(turns), 1)
+            if turns
+            else 0
         )
-        stale_auto = sum(1 for s in stale_tasks if s.get("event") == "stale_auto_task_cleared_skipping_redispatch")
-        stale_model = sum(1 for s in stale_tasks if s.get("event") == "stale_model_task_skipping_redispatch")
-        footer["stale_tasks"] = {"auto": stale_auto, "model": stale_model, "total": stale_auto + stale_model}
+        stale_auto = sum(
+            1
+            for s in stale_tasks
+            if s.get("event") == "stale_auto_task_cleared_skipping_redispatch"
+        )
+        stale_model = sum(
+            1 for s in stale_tasks if s.get("event") == "stale_model_task_skipping_redispatch"
+        )
+        footer["stale_tasks"] = {
+            "auto": stale_auto,
+            "model": stale_model,
+            "total": stale_auto + stale_model,
+        }
         print(json.dumps({"turns": turns, "gaps": gaps, "footer": footer}, indent=2, default=str))
         return 0
 

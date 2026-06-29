@@ -1,4 +1,5 @@
 """Tests for CLAF orchestrator long-loop hardening helpers."""
+
 import os
 import sys
 from pathlib import Path
@@ -13,27 +14,31 @@ def _make_tool_history(cycles: int) -> list[dict]:
     """Build a fake Anthropic history with `cycles` tool_use/tool_result pairs."""
     msgs = []
     for i in range(cycles):
-        msgs.append({
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "tool_use",
-                    "id": f"tu_{i}",
-                    "name": "Read",
-                    "input": {"file_path": f"/tmp/file_{i}.txt"},
-                }
-            ],
-        })
-        msgs.append({
-            "role": "user",
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": f"tu_{i}",
-                    "content": f"This is the long result for cycle {i} " * 50,
-                }
-            ],
-        })
+        msgs.append(
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": f"tu_{i}",
+                        "name": "Read",
+                        "input": {"file_path": f"/tmp/file_{i}.txt"},
+                    }
+                ],
+            }
+        )
+        msgs.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": f"tu_{i}",
+                        "content": f"This is the long result for cycle {i} " * 50,
+                    }
+                ],
+            }
+        )
     return msgs
 
 
@@ -59,9 +64,7 @@ def test_state_acting_after_tool_use_without_result():
     msgs = [
         {
             "role": "assistant",
-            "content": [
-                {"type": "tool_use", "id": "tu_0", "name": "Read", "input": {}}
-            ],
+            "content": [{"type": "tool_use", "id": "tu_0", "name": "Read", "input": {}}],
         }
     ]
     state, info = orch._derive_loop_state(msgs, tools=[{"name": "Read"}])

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generic runner for minted toolbox tools."""
+
 import importlib.util
 import json
 import sys
 from pathlib import Path
-
 
 TOOLS_DIR = Path(__file__).resolve().parent
 

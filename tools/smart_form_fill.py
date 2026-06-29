@@ -10,6 +10,7 @@ Usage:
     python3 tools/smart_form_fill.py --profile profile.json
     python3 tools/smart_form_fill.py --dry-run           # plan only, no fill
 """
+
 import argparse
 import json
 import os
@@ -24,7 +25,7 @@ from pathlib import Path
 try:
     from bs4 import BeautifulSoup
 except Exception as e:  # pragma: no cover
-    print("[SmartFormFill] BeautifulSoup4 is required: pip install beautifulsoup4")
+    print("[SmartFormFill] BeautifulSoup4 is required: pip install beautifulsoup4", file=sys.stderr)
     raise SystemExit(1)
 
 SENSEI_MCP = Path.home() / "projects/master-ai/sensei_mcp_server.py"
@@ -78,7 +79,10 @@ _TEXT_PATTERN_SPECS = [
     (r"dob|birth\s*date|date\s*of\s*birth|birthday", "birth_date"),
     (r"start\s*date|date\b", "start_date"),
     (r"full\s*name|your\s*name|applicant\s*name|\bname\b", "full_name"),
-    (r"comments|summary|description|message|cover\s*letter|notes|additional", None),  # generated later
+    (
+        r"comments|summary|description|message|cover\s*letter|notes|additional",
+        None,
+    ),  # generated later
 ]
 
 
@@ -186,7 +190,9 @@ def _should_check_checkbox(label: str) -> bool:
     return False
 
 
-def _radio_pick_value(selector: str, soup: BeautifulSoup, preferred: str | None = None) -> str | None:
+def _radio_pick_value(
+    selector: str, soup: BeautifulSoup, preferred: str | None = None
+) -> str | None:
     """For a radio input, return the best option in its group."""
     src = _source_lookup(selector, soup)
     if not src or src.name != "input" or src.get("type", "").lower() != "radio":
@@ -240,7 +246,11 @@ class SenseiMCP:
         self._req = 0
         self.call(
             "initialize",
-            {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "smart-form-fill", "version": "1.0"}},
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "smart-form-fill", "version": "1.0"},
+            },
             1,
         )
 
@@ -277,7 +287,11 @@ class SenseiMCP:
         return self._result_from_text(txt)
 
     def click(self, target: str) -> dict:
-        r = self.call("tools/call", {"name": "click", "arguments": {"what": target, "intercept_popup": True}}, self._req)
+        r = self.call(
+            "tools/call",
+            {"name": "click", "arguments": {"what": target, "intercept_popup": True}},
+            self._req,
+        )
         txt = r["result"]["content"][0]["text"]
         return self._result_from_text(txt)
 
@@ -298,13 +312,15 @@ def discover_fields(page: dict) -> list[dict]:
         if not sel or sel in seen_selectors:
             continue
         seen_selectors.add(sel)
-        fields.append({
-            "selector": sel,
-            "type": "text" if role == "input" else role,
-            "label": el.get("name", ""),
-            "role": role,
-            "value_present": bool(el.get("value", "").strip()),
-        })
+        fields.append(
+            {
+                "selector": sel,
+                "type": "text" if role == "input" else role,
+                "label": el.get("name", ""),
+                "role": role,
+                "value_present": bool(el.get("value", "").strip()),
+            }
+        )
 
     return fields
 
@@ -380,19 +396,29 @@ def decide_value(field: dict, soup: BeautifulSoup | None) -> tuple[str | None, s
             preferred = _match_text_value(hints)
         val = _radio_pick_value(selector, soup, preferred=preferred)
         if val:
-            reason = "radio: matched default option" if preferred else "radio: first option selected"
+            reason = (
+                "radio: matched default option" if preferred else "radio: first option selected"
+            )
             return val, reason
         return None, "radio: could not determine options"
 
     # Select menus: prefer an option that matches the field's default value,
     # otherwise fall back to the first real option.
     if role == "select" or ftype == "select" or (src and src.name == "select"):
-        sel_src = src if (src and src.name == "select") else (_source_lookup(selector, soup) if soup else None)
+        sel_src = (
+            src
+            if (src and src.name == "select")
+            else (_source_lookup(selector, soup) if soup else None)
+        )
         if sel_src and sel_src.name == "select":
             preferred = _match_text_value(hints)
             opt = _pick_select_option(sel_src, preferred=preferred)
             if opt:
-                reason = "select: matched default option" if preferred else "select: first real option chosen"
+                reason = (
+                    "select: matched default option"
+                    if preferred
+                    else "select: first real option chosen"
+                )
                 return opt, reason
         return None, "select: no usable options found"
 
@@ -439,7 +465,9 @@ def decide_value(field: dict, soup: BeautifulSoup | None) -> tuple[str | None, s
 def main() -> int:
     parser = argparse.ArgumentParser(description="Universal form filler")
     parser.add_argument("--dry-run", action="store_true", help="Plan fills but do not execute")
-    parser.add_argument("--profile", type=Path, help="JSON file mapping field hints to custom values")
+    parser.add_argument(
+        "--profile", type=Path, help="JSON file mapping field hints to custom values"
+    )
     args = parser.parse_args()
 
     # Load custom profile if provided.

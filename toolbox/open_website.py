@@ -4,6 +4,7 @@
 Deterministic replacement for the LLM-driven "go to [url]" path.
 Uses action_mcp.py to push a BROWSER_NAV action to the local bridge.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -11,7 +12,6 @@ from pathlib import Path
 # Add project root to path so we can import action_mcp
 sys.path.insert(0, str(Path.home() / "projects" / "claf"))
 import action_mcp  # noqa: E402
-
 
 DEFAULT_URL = "https://kimi.com"
 

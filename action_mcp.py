@@ -147,6 +147,7 @@ def _dispatch_browser(kind: str, payload: dict, session: str = _BRIDGE_SESSION) 
 
 # ─── Directive execution ──────────────────────────────────────────────────────
 
+
 def _exec_browse_open_url(url: str) -> dict:
     if not url.startswith("http"):
         url = "https://" + url
@@ -193,7 +194,12 @@ def _exec_shell(cmd: str) -> dict:
             "message": out if out else err if err else f"(exit {result.returncode})",
         }
     except subprocess.TimeoutExpired:
-        return {"action": "shell_run", "success": False, "command": cmd, "error": "timed out after 30s"}
+        return {
+            "action": "shell_run",
+            "success": False,
+            "command": cmd,
+            "error": "timed out after 30s",
+        }
     except Exception as e:
         return {"action": "shell_run", "success": False, "command": cmd, "error": str(e)}
 
@@ -236,10 +242,21 @@ def _exec_file_write(path: str, content: str) -> dict:
 
 _DIRECTIVE_PATTERNS = [
     (re.compile(r"BROWSE\s*:\s*open_url\s*=\s*([^\s]+)", re.IGNORECASE), "browse_open_url", 1),
-    (re.compile(r"BROWSE\s*:\s*search\s*=\s*(.+?)(?=\s[A-Z]+:|$)", re.IGNORECASE | re.DOTALL), "browse_search", 1),
+    (
+        re.compile(r"BROWSE\s*:\s*search\s*=\s*(.+?)(?=\s[A-Z]+:|$)", re.IGNORECASE | re.DOTALL),
+        "browse_search",
+        1,
+    ),
     (re.compile(r"SHELL\s*:\s*(.+?)(?=\s[A-Z]+:|\n|$)", re.IGNORECASE | re.DOTALL), "shell_run", 1),
     (re.compile(r"FILE\s*:\s*read\s*=\s*([^\s,]+)", re.IGNORECASE), "file_read", 1),
-    (re.compile(r"FILE\s*:\s*write\s*=\s*([^\s,]+)(?:,\s*content\s*=\s*(.+))?(?=\s[A-Z]+:|$)", re.IGNORECASE | re.DOTALL), "file_write", 2),
+    (
+        re.compile(
+            r"FILE\s*:\s*write\s*=\s*([^\s,]+)(?:,\s*content\s*=\s*(.+))?(?=\s[A-Z]+:|$)",
+            re.IGNORECASE | re.DOTALL,
+        ),
+        "file_write",
+        2,
+    ),
 ]
 
 
@@ -259,7 +276,9 @@ def parse_and_execute_directives(text: str) -> list[dict]:
                 results.append(_exec_file_read(m.group(1).strip()))
             elif action_type == "file_write":
                 path = m.group(1).strip()
-                content = m.group(2).strip() if m.lastindex and m.lastindex >= 2 and m.group(2) else ""
+                content = (
+                    m.group(2).strip() if m.lastindex and m.lastindex >= 2 and m.group(2) else ""
+                )
                 results.append(_exec_file_write(path, content))
     return results
 
