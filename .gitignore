@@ -99,3 +99,6 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# Runtime output artifacts
+tools/daddy_dom_output.json
