@@ -203,6 +203,44 @@ source "$HOME/projects/claf/claf_shell_integration.sh"
 
 ---
 
+## API Endpoints
+
+The CLAF FastAPI proxy exposes the following endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/` | Service metadata and status |
+| `GET`  | `/healthz` | Health check; returns `{"status":"ok"}` |
+| `GET`  | `/v1/models` | Anthropic-compatible models list |
+| `POST` | `/v1/messages` | Main Anthropic Messages API proxy |
+| `GET`  | `/stats` | Routing statistics and recent decisions |
+
+All responses are shaped like Anthropic Messages API responses so Claude Code CLI can consume them without modification.
+
+---
+
+## Development
+
+### Install dev dependencies
+
+```bash
+pip install -r requirements.txt
+pip install ruff pytest pytest-cov pre-commit
+pre-commit install
+```
+
+### Run linting and tests
+
+```bash
+ruff check .
+ruff format --check .
+pytest --cov=.
+```
+
+Shell scripts are linted with `shellcheck`. Python formatting and linting are enforced via `ruff` and a pre-commit hook.
+
+---
+
 ## Contributing
 
 This is a personal off-grid tool, but suggestions and issue reports are welcome.
@@ -229,4 +267,4 @@ MIT © Elijah Wilkins. See [LICENSE](LICENSE) for full text.
 Related projects:
 
 - **[master-ai](https://github.com/ebey317/master-ai)** — Local-first agent stack; Sensei terminal agent and Pupil browser UI
-- **[AI Controller](https://github.com/ebey317/-AI-controller.)** — Xbox controller → voice → desktop control
+- **[AI Controller](https://github.com/ebey317/ai-controller)** — Xbox controller → voice → desktop control
