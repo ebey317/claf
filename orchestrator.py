@@ -1308,11 +1308,16 @@ def ollama_chat(
     if tools:
         payload["tools"] = _anthropic_tools_to_ollama(tools)
 
-    # Mechanical output enforcement: small local models hallucinate tool names and
-    # argument shapes unless the token sampler is masked. Ollama's `format` field
-    # accepts a JSON schema; use it only for local requests when enabled.
+    # Tool calling strategy: native (default) vs. constrained decoding (opt-in).
+    # Benchmark (2026-08-26): native tool_calls = 29.1s, correct; constrained = 300s+ timeout.
+    # Native is now DEFAULT; constrained is OPT-IN via CLAF_LOCAL_CONSTRAINED=1.
+    # Modern Ollama models (master-ai, qwen, hermes) support native tool_calls and emit
+    # properly-formed tool_use blocks without forced grammar, so constrained decoding
+    # is a workaround only needed for older/non-capable models.
     _constrained = not is_cloud and tools and os.environ.get("CLAF_LOCAL_CONSTRAINED", "0") == "1"
     if _constrained:
+        # Force output to match a specific JSON schema. Use ONLY when model doesn't
+        # support native tool_calls or is hallucinating malformed tool names.
         payload["format"] = _tools_to_ollama_format(tools)
 
     # Local models (especially qwen/hermes via Ollama) crash or produce malformed
@@ -3758,12 +3763,25 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                     _cloud_sys = (_cloud_sys or "") + "\n\n" + _task_block
             if _trim_on:
                 if len(_cloud_msgs) > _cloud_msgs_max:
-                    _cloud_msgs = _cloud_msgs[-_cloud_msgs_max:]
+                    # Never cut inside a tool_calls/tool_result group: a "tool"
+                    # message with no preceding assistant tool_calls message in
+                    # the slice is an orphan. Strict upstreams (OpenRouter's
+                    # Anthropic backend) don't just ignore it — they reject the
+                    # WHOLE request ("messages: at least one message is
+                    # required"), which silently killed every multi-tool-call
+                    # turn (e.g. 12 parallel tool results) past this cap.
+                    # Walk the cut point back to the owning assistant message
+                    # so the group stays intact, even if that means keeping
+                    # more than max_msgs for this turn.
+                    _cut = len(_cloud_msgs) - _cloud_msgs_max
+                    while _cut > 0 and _cloud_msgs[_cut].get("role") == "tool":
+                        _cut -= 1
+                    _cloud_msgs = _cloud_msgs[_cut:]
                     log(
                         "cloud_msgs_trimmed",
                         provider=p.name,
                         msgs_before=len(_msgs),
-                        msgs_after=_cloud_msgs_max,
+                        msgs_after=len(_cloud_msgs),
                     )
                 # Cap per-message content. A single tool_result (file read,
                 # bash output) can be 10K+ chars — enough to 413 groq even after
