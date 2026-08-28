@@ -370,13 +370,30 @@ _WEBSEARCH_NEEDLES = re.compile(
 
 
 def _last_user_text(msgs) -> str:
-    """Flatten the last message's text blocks (tool_result blocks yield '')."""
+    """Flatten the last USER-role message's text blocks (tool_result blocks yield '').
+
+    Must filter by role=="user" -- msgs[-1] is not reliably the user's turn.
+    Claude Code appends trailing role="system" reminder messages (agent-type
+    listings, MCP server instructions, skill listings, etc.) after the real
+    user message, and those often run to thousands of characters covering
+    generic software/tool vocabulary. Treating that boilerplate as "the last
+    user text" let it accidentally satisfy the 2-token-overlap toolbox
+    matcher below and hijack unrelated requests into a wrong canned tool
+    response (observed 2026-08-28: a plain "reply with PONG" prompt got
+    silently replaced by a stale thunderbird_summary result because the
+    trailing system reminder happened to mention "email"/"summary"-adjacent
+    words).
+    """
     if not msgs:
         return ""
-    content = msgs[-1].get("content", "")
-    if isinstance(content, list):
-        return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-    return str(content)
+    for m in reversed(msgs):
+        if m.get("role") != "user":
+            continue
+        content = m.get("content", "")
+        if isinstance(content, list):
+            return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        return str(content)
+    return ""
 
 
 def _is_action_turn(body: dict) -> bool:
