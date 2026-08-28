@@ -487,6 +487,19 @@ def run_once(dry_run: bool = False) -> str:
     return f"done:{name}"
 
 
+def run(args: dict | None = None) -> str:
+    """Toolbox dispatcher entry point (see orchestrator.py SERVER-SIDE TOOLBOX
+    DISPATCH, which imports this file and calls run(args)). Was previously
+    missing -- every dispatch to this tool raised
+    "module 'toolbox_engagement_loop' has no attribute 'run'", caught and
+    silently swallowed by the dispatcher's fallback, on every matching
+    request (observed firing on nearly every turn in orchestrator.log,
+    2026-08-28)."""
+    args = args or {}
+    dry_run = bool(args.get("dry_run", False))
+    return run_once(dry_run=dry_run)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Engagement loop for HANDOFF.md")
     parser.add_argument(

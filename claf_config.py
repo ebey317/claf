@@ -490,14 +490,28 @@ def _toolbox_variants() -> list[tuple[str, str, set]]:
     return variants
 
 
+_SYSTEM_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
+
+
 def _matches_toolbox_command(body: dict) -> str | None:
     """Return the tool name if the last user message is a minted-toolbox command.
 
     Matches on a full trigger phrase appearing as substring, or >=2 distinctive
     tokens of a variant overlapping the message. Conservative by design — a
     false positive only pins a request local (no escalation), never the reverse.
+
+    Claude Code embeds <system-reminder>...</system-reminder> boilerplate
+    (current date, available agent types, MCP server instructions, skill
+    listings, etc.) as an extra text block INSIDE the real user message, not
+    as a separate message -- so filtering by role (see _last_user_text) isn't
+    enough on its own. That boilerplate commonly runs to multiple KB and
+    covers generic software/tool vocabulary, which was enough to satisfy the
+    2-token-overlap threshold below for essentially unrelated tools on
+    unrelated prompts (observed 2026-08-28: job_email_scan fired on nearly
+    every request in orchestrator.log regardless of prompt content). Strip
+    it before matching so only the operator's actual words are scored.
     """
-    text = _last_user_text(body.get("messages") or []).lower()
+    text = _SYSTEM_REMINDER_RE.sub(" ", _last_user_text(body.get("messages") or [])).lower()
     if not text:
         return None
     text_tokens = set(re.findall(r"[a-z]+", text))
