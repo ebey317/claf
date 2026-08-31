@@ -19,8 +19,8 @@ import sys
 import threading
 import time
 import traceback
-import urllib.request
 import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -670,7 +670,7 @@ def _run_loop(task_id: str, goal: str, session: str, worker_id: str, profile: st
                     break
 
                 result_text = _exec_tool(name, args, session)
-                step_id = _step_record(task_id, turn, directive_sig, result_text)
+                _step_record(task_id, turn, directive_sig, result_text)
 
                 if result_text.startswith("__DONE__:"):
                     _task_set_status(task_id, "completed")
@@ -708,7 +708,7 @@ def _run_loop(task_id: str, goal: str, session: str, worker_id: str, profile: st
             _task_set_status(task_id, "failed")
             _incident_record(task_id, None, f"max_turns_exceeded:{MAX_TURNS}", turn)
 
-    except Exception as e:
+    except Exception:
         _incident_record(task_id, None, traceback.format_exc(), turn)
         _task_set_status(task_id, "failed")
     finally:
@@ -1288,7 +1288,7 @@ def main():
 
     # MCP stdio loop
     for msg, framed in _iter_rpc_messages():
-        setattr(_send, "_framed", framed)
+        _send._framed = framed
         try:
             resp = _handle_rpc(msg if isinstance(msg, dict) else {})
         except Exception as e:

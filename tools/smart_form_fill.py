@@ -24,9 +24,9 @@ from pathlib import Path
 
 try:
     from bs4 import BeautifulSoup
-except Exception as e:  # pragma: no cover
+except Exception as _bs4_err:  # pragma: no cover
     print("[SmartFormFill] BeautifulSoup4 is required: pip install beautifulsoup4", file=sys.stderr)
-    raise SystemExit(1)
+    raise SystemExit(1) from _bs4_err
 
 SENSEI_MCP = Path.home() / "projects/master-ai/sensei_mcp_server.py"
 

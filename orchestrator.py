@@ -32,7 +32,6 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import enum
-import hashlib
 import json
 import os
 import platform
@@ -141,29 +140,37 @@ if _KEYS_FILE.exists():
     except Exception:
         pass  # if keystore is malformed, fall back to whatever env already has
 
+import contextlib
+import threading
+
+import claf_permissions
+import claf_throttle as throttle
 import sensei_supervisor as supervisor  # ReAct XML tool-call translator (off-grid MCP)
-from task_state import load_task, save_task, format_task_for_injection, task_belongs_to, TASK_FILE
+import tool_bridge  # ReAct tools[] bridge helpers (added by install_tool_bridge.sh)
 from claf_config import (
+    _EMAIL_SIGNALS,
     MODE,
     PROVIDERS,
-    describe,
-    select_provider,
-    _is_hard_task,
-    _is_action_turn,
-    _select_mode,
     TAP_TEMPLATES,
-    detect_tap_intent,
     _flatten_prompt_text,
+    _is_action_turn,
+    _is_hard_task,
+    _matches_toolbox_command,
+    _select_mode,
+    describe,
+    detect_tap_intent,
     next_cloud_peer,
     pick_cloud_peer,
     select_local_tools,
-    _EMAIL_SIGNALS,
-    _matches_toolbox_command,
+    select_provider,
 )
-import claf_permissions
-import claf_throttle as throttle
-import contextlib
-import threading
+from task_state import (
+    TASK_FILE,
+    format_task_for_injection,
+    load_task,
+    save_task,
+    task_belongs_to,
+)
 
 try:
     from orchestrator_action_bridge import execute_actions_in_text
@@ -1114,8 +1121,8 @@ def _repair_malformed_tool_json(
     'name' and 'arguments' keys, fixes common quoting mistakes, validates
     against tool input schemas, and maps the result to Ollama's tool_call
     format."""
-    import json as _json
     import ast as _ast
+    import json as _json
 
     if not text or not tools:
         return []
@@ -1496,8 +1503,9 @@ def openai_compat_chat(
     OpenRouter). Sends native tools when present and reads tool_calls back as
     Anthropic tool_use blocks. Returns (content_blocks, usage, tool_use_bool)."""
     key = os.environ.get(provider.env_key or "", "")
-    if not key:
+    if provider.env_key and not key:
         raise RuntimeError(f"{provider.name}: env var {provider.env_key} not set")
+    # keyless providers (e.g. opencode-free) pass through with empty Authorization
     payload = {
         "model": provider.model,
         "messages": messages,
@@ -1508,7 +1516,7 @@ def openai_compat_chat(
     if tools:
         payload["tools"] = _anthropic_tools_to_ollama(tools)  # OpenAI == Ollama tool schema
         payload["tool_choice"] = "auto"
-    headers = {"Authorization": f"Bearer {key.strip()}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {key.strip()}", "Content-Type": "application/json"} if key else {"Content-Type": "application/json"}
     # OpenRouter requires/appends these headers for proper request routing and
     # site attribution; without them it can return 401/403 on some keys.
     if provider.name == "openrouter":
@@ -2315,8 +2323,6 @@ async def chat_completions(request: Request):
 
     openai_resp = _anthropic_to_openai(anthropic_resp, requested_model)
     return openai_resp
-
-    return {"data": data}
 
 
 def _sse_events(response: dict):

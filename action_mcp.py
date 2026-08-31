@@ -16,10 +16,9 @@ import json
 import os
 import re
 import subprocess
-import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 # ─── Safety ───────────────────────────────────────────────────────────────────
@@ -264,7 +263,7 @@ def parse_and_execute_directives(text: str) -> list[dict]:
     """Scan text for action directives and execute them.
     Returns a list of result dicts (one per directive found)."""
     results: list[dict] = []
-    for pattern, action_type, group_count in _DIRECTIVE_PATTERNS:
+    for pattern, action_type, _group_count in _DIRECTIVE_PATTERNS:
         for m in pattern.finditer(text):
             if action_type == "browse_open_url":
                 results.append(_exec_browse_open_url(m.group(1).strip()))

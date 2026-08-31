@@ -80,7 +80,7 @@ def parse_args(args_line: str) -> list[dict]:
 
 
 def infer_category(tool: dict) -> str:
-    module = tool.get("module", "")
+    _ = tool.get("module", "")  # reserved for future per-module routing
     desc = tool.get("description", "").lower()
     if "browser" in desc or "chrome" in desc or "website" in desc or "url" in desc:
         return "browser"

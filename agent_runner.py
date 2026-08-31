@@ -22,12 +22,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -435,7 +437,6 @@ MAX_TURNS = 20
 def _execute_task(task: dict):
     task_id = task["task_id"]
     goal = task["goal"]
-    worker_id = _uid()
     _log(f"task start {task_id[:8]}: {goal[:80]}")
 
     messages = [{"role": "user", "content": goal}]
@@ -547,8 +548,9 @@ _active_lock = threading.Lock()
 
 
 def _worker_loop():
-    global _active_workers
     worker_id = _uid()
+    global _active_workers
+    _uid()  # worker identity not needed here; generator id keeps logs unique
     while not _shutdown.is_set():
         with _active_lock:
             if _active_workers >= MAX_ACTIVE:
@@ -662,7 +664,7 @@ def main():
 
     # Start worker threads
     threads = []
-    for i in range(MAX_ACTIVE):
+    for _ in range(MAX_ACTIVE):
         t = threading.Thread(target=_worker_loop, daemon=True)
         t.start()
         threads.append(t)

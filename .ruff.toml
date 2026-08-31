@@ -1,19 +1,26 @@
 # Ruff configuration for CLAF
-[tool.ruff]
+# (.ruff.toml IS the ruff namespace — settings live at top level,
+#  sub-tables drop the [tool.ruff.*] prefix used in pyproject.toml)
+# Scope: real defects + import hygiene. Opinion rules (PLR/C901/T201 prints/
+# asserts/TMP files) are excluded — this is a CLI tool where prints, asserts,
+# and /tmp debug artifacts are the product.
 line-length = 88
 target-version = "py39"
 
-[tool.ruff.lint]
-select = ["E", "W", "F", "I", "C", "N", "B", "Q", "TCH", "ERA", "RET", "SIM", "PTH", "COM", "DTZ", "FIX", "PERF", "PIE", "PLC", "PLE", "PLR", "PLW", "RSE", "RUF", "S", "T20", "TID", "UP", "YTT"]
-ignore = ["E501", "W503", "W504"]
+[lint]
+select = ["E", "W", "F", "I", "B"]
+ignore = ["E501"]
 
-[tool.ruff.format]
-line-length = 88
-indent-width = 4
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]
+# sys.path bootstrap-then-import is the intentional pattern in these entrypoints
+"orchestrator.py" = ["E402"]
+"toolbox/*" = ["E402"]
+# parity harness imports _repair_malformed_tool_json as an availability check —
+# the ImportError branch re-execs under the venv python; the binding stays unused by design
+"parity/*" = ["E402", "F401"]
+
+[format]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
-
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]
-"tests/*" = ["S101"]

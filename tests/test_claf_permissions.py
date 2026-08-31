@@ -14,10 +14,18 @@ def test_default_allows_read():
 
 
 def test_default_asks_for_edit():
+    os.environ["CLAF_PERMISSION_MODE"] = "default"
+    import importlib
+
+    importlib.reload(cp)
     assert cp.is_action_allowed("edit") == "ask"
 
 
 def test_default_asks_for_bash():
+    os.environ["CLAF_PERMISSION_MODE"] = "default"
+    import importlib
+
+    importlib.reload(cp)
     assert cp.is_action_allowed("bash", "ls") == "ask"
 
 

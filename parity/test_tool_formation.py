@@ -15,7 +15,13 @@ Env:
 """
 
 from __future__ import annotations
-import json, os, sys, time, urllib.request, pathlib
+
+import json
+import os
+import pathlib
+import sys
+import time
+import urllib.request
 
 CLAF = pathlib.Path.home() / "projects" / "claf"
 _VENV_PYTHON = CLAF / ".venv" / "bin" / "python3"
@@ -161,7 +167,7 @@ CORPUS = [
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 def _prepare_read_files():
-    for _id, prompt, name, expected in CORPUS:
+    for _id, _prompt, name, expected in CORPUS:
         if name == "Read":
             path = expected["file_path"]
             pathlib.Path(path).write_text(f"contents of {path}\n", encoding="utf-8")
