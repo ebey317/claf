@@ -1,0 +1,25 @@
+# Auto-detect text files, normalize line endings on commit
+* text=auto eol=lf
+
+# Markdown — render as docs
+*.md          linguist-documentation
+*.mdx         linguist-documentation
+LICENSE       linguist-documentation
+LICENSE.md    linguist-documentation
+CHANGELOG.md  linguist-documentation
+CONTRIBUTING.md linguist-documentation
+CODE_OF_CONDUCT.md linguist-documentation
+SECURITY.md   linguist-documentation
+AGENTS.md     linguist-documentation
+CLAUDE.md     linguist-documentation
+
+# Lockfiles shouldn't be auto-formatted by tooling
+package-lock.json -diff
+yarn.lock      -diff
+pnpm-lock.yaml -diff
+uv.lock        -diff
+poetry.lock    -diff
+
+# Vendored or generated
+vendor/        linguist-vendored
+node_modules/  linguist-vendored
