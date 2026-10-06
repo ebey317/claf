@@ -204,6 +204,17 @@ def _cloud_peers() -> list[Provider]:
             max_tools=40,
         ),
         Provider(
+            tier=10,
+            name="poolside",
+            pool="cloud",
+            kind="openai_compat",
+            model="poolside/laguna-s-2.1",
+            url="https://inference.poolside.ai/v1/chat/completions",
+            env_key="POOLSIDE_API_KEY",
+            enabled=_env_present("POOLSIDE_API_KEY"),
+            notes="Poolside direct; code-tuned Laguna. enabled when POOLSIDE_API_KEY is present",
+        ),
+        Provider(
             tier=9,
             name="gemini",
             pool="cloud",
