@@ -29,7 +29,7 @@ Cloud-based LLM agents are powerful but fragile: they depend on network access, 
 - **Persistent task state** — `~/.claf/current_task.json` is written at task start and injected at the top of every turn. Context-cap restarts pick up exactly where the agent stopped.
 - **Off-grid lock** — Even with cloud keys present, `local` mode returns 423 on any non-Ollama call. Defense in depth against misconfiguration.
 - **Permission-mode sync** — Mirrors Claude Code's permission modes (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`) with deterministic safety gates.
-- **Multi-provider cloud tiers** — Supports Anthropic, OpenRouter, Groq, Cerebras, and Fireworks as opt-in escalation providers.
+- **Multi-provider cloud tiers** — Supports Anthropic, OpenRouter, Groq, Cerebras, Fireworks, and Poolside as opt-in escalation providers.
 - **Live routing visibility** — `watch.py` tails `orchestrator.log` and pretty-prints every routing decision in real time.
 
 ---
@@ -40,7 +40,7 @@ Cloud-based LLM agents are powerful but fragile: they depend on network access, 
 |---|---|
 | Proxy server | FastAPI + Uvicorn |
 | Local model runtime | Ollama (qwen2.5-coder:3b default) |
-| Cloud escalation | Anthropic, OpenRouter, Groq, Cerebras, Fireworks |
+| Cloud escalation | Anthropic, OpenRouter, Groq, Cerebras, Fireworks, Poolside |
 | CLI client | Claude Code CLI (`@anthropic-ai/claude-code`) |
 | Browser automation | Chrome MCP extension + Sensei tool directives |
 | Language | Python 3.10+ |
@@ -181,8 +181,8 @@ source "$HOME/projects/claf/claf_shell_integration.sh"
                     │                                             │
                     │  ┌─────────────┐    ┌──────────────────┐    │
                     │  │  Router     │───►│  Charter Inject  │    │
-                    │  │ (claf_)     │    │  (identity +     │    │
-                    │  │  config.py) │    │   task state)    │    │
+                    │  │ (claf_      │    │  (identity +     │    │
+                    │  │  config.py)  │    │   task state)    │    │
                     │  └──────┬──────┘    └──────────────────┘    │
                     │         │                                   │
                     │    ┌────┴────┐                                │
@@ -197,6 +197,7 @@ source "$HOME/projects/claf/claf_shell_integration.sh"
                    │ (local)  │  │  Groq / Cerebras / Fireworks  │
                    └──────────┘  └──────────────────────────────┘
 
+    Router config: `claf_config.py` at repo root.
     Routing signals: keywords, tool groups, task state, context size
     Off-grid lock: local mode 423s any non-Ollama call (defense in depth)
 ```
