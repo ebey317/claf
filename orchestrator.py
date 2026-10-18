@@ -161,6 +161,9 @@ from claf_config import (
     detect_tap_intent,
     next_cloud_peer,
     pick_cloud_peer,
+    resolve_role,
+    role_model,
+    role_reasoning_effort,
     select_local_tools,
     select_provider,
 )
@@ -1497,11 +1500,21 @@ def ollama_chat(
 
 
 def openai_compat_chat(
-    provider, messages: list[dict], tools: list[dict] | None = None
+    provider,
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[list[dict], dict, bool]:
     """OpenAI-compatible chat completions (Groq / Cerebras / Fireworks /
     OpenRouter). Sends native tools when present and reads tool_calls back as
-    Anthropic tool_use blocks. Returns (content_blocks, usage, tool_use_bool)."""
+    Anthropic tool_use blocks. Returns (content_blocks, usage, tool_use_bool).
+
+    reasoning_effort: role_reasoning_effort() override (currently only the
+    'emergency' role sets one) — forwarded as-is via the OpenAI/OpenRouter
+    `reasoning_effort` field. Not applied to anthropic_direct_chat: that
+    path already strips 'thinking' on purpose (unsupported-model 400s
+    cascade to a slow local fallback), so effort stays openai_compat-only.
+    """
     key = os.environ.get(provider.env_key or "", "")
     if provider.env_key and not key:
         raise RuntimeError(f"{provider.name}: env var {provider.env_key} not set")
@@ -1513,6 +1526,8 @@ def openai_compat_chat(
         "max_tokens": 4096,
         "stream": False,
     }
+    if reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort
     if tools:
         payload["tools"] = _anthropic_tools_to_ollama(tools)  # OpenAI == Ollama tool schema
         payload["tool_choice"] = "auto"
@@ -3430,6 +3445,29 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
         )
         provider = _replace(provider, model=routed_model)
 
+    # Role-based model override (claf_config.resolve_role/role_model) — the
+    # operator sets which model answers each role (overseer/worker/planner/
+    # emergency); nothing here is hardcoded. Only applies to cloud peers —
+    # the dual-local-routing override above already owns local-pool swaps.
+    # Same single-call-only pattern as that block: dataclasses.replace()
+    # leaves the shared PROVIDERS entry untouched for every other request.
+    request_role = "overseer"
+    if provider.pool == "cloud":
+        request_role = resolve_role(body)
+        role_override_model = role_model(request_role)
+        if role_override_model and role_override_model != provider.model:
+            from dataclasses import replace as _replace
+
+            log(
+                "role_route",
+                role=request_role,
+                from_model=provider.model,
+                to_model=role_override_model,
+                provider=provider.name,
+            )
+            provider = _replace(provider, model=role_override_model)
+    turn["role"] = request_role
+
     # Routing-proof fields (verification-spec layer 3): emit the actual
     # effective provider/model after any single-call model override so the
     # watch surface answers "who took the call?" unambiguously.
@@ -3893,7 +3931,9 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                     tools_after=len(_tools_eff) if _tools_eff else 0,
                     first_tools=[t.get("name") for t in (_tools_eff or [])][:5],
                 )
-            _blocks, _usage, _tool_use = openai_compat_chat(p, _cloud_msgs, _tools_eff)
+            _blocks, _usage, _tool_use = openai_compat_chat(
+                p, _cloud_msgs, _tools_eff, reasoning_effort=role_reasoning_effort(request_role)
+            )
         elif p.kind == "anthropic":
             _blocks, _usage = anthropic_direct_chat(p, body)
             _tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in _blocks)
@@ -3983,6 +4023,26 @@ async def _messages_impl(request: Request, body: dict, turn: dict):
                 )
                 provider = next_cloud_peer(_rate_limit_failed, max_tier=_max_fallback_tier)
                 if provider is not None:
+                    # Re-apply the role override on the fallback peer too —
+                    # without this, a role model failing (429/404/5xx) drops
+                    # the fallback peer back to ITS OWN hardcoded default,
+                    # silently abandoning the operator's role choice exactly
+                    # when a retry is needed most. Found live 2026-10-15:
+                    # a bad overseer model 404'd, fell back to openrouter's
+                    # stock claude-sonnet-4.6 instead of the overseer slug.
+                    _fallback_role_model = role_model(request_role)
+                    if _fallback_role_model and _fallback_role_model != provider.model:
+                        from dataclasses import replace as _replace
+
+                        log(
+                            "role_route",
+                            role=request_role,
+                            from_model=provider.model,
+                            to_model=_fallback_role_model,
+                            provider=provider.name,
+                            via="fallback",
+                        )
+                        provider = _replace(provider, model=_fallback_role_model)
                     turn["provider"] = provider.name
                     turn["provider_pool"] = provider.pool
                     turn["model"] = provider.model

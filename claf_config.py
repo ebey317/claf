@@ -88,6 +88,82 @@ _LOCAL_PROVIDER = Provider(
 )
 
 
+# ----------------------------------------------------------------------------
+# Role-based model assignment (2026-10-15, operator request: "we're not
+# hardcoding any models, we're gonna set the models").
+# ----------------------------------------------------------------------------
+# Four roles, meaning the same thing regardless of which provider is active:
+#   overseer  — default driver for any cloud-escalated request; "the one I
+#               talk to every day."
+#   worker    — heavier execution model (e.g. coding). Selected ONLY via an
+#               explicit metadata.role="worker" from the caller — CLAF does
+#               not auto-detect "is this a coding task"; no reliable signal
+#               for that exists in a proxied Claude-Code-shaped request body.
+#   planner   — mid-difficulty reasoning; ALSO the fallback model when the
+#               primary cloud peer fails (same slot, by operator's own
+#               design: "sonnet would probably be the planner ... we use
+#               sonnet also as a fallback model"). Selected via
+#               metadata.role="planner".
+#   emergency — crisis routing. Reuses the EXISTING metadata.emergency
+#               trigger (_select_mode already draws from the emergency
+#               throttle pool for this) — this just makes which model
+#               answers it configurable, plus gives it a reasoning-effort
+#               knob instead of reusing the overseer's model as-is.
+# Every role defaults to "" (unset). Unset means: don't touch provider.model,
+# keep today's behavior exactly — this is additive, nothing breaks if the
+# operator never sets a role env var.
+ROLE_ENV_VARS = {
+    "overseer": "CLAF_OVERSEER_MODEL",
+    "worker": "CLAF_WORKER_MODEL",
+    "planner": "CLAF_PLANNER_MODEL",
+    "emergency": "CLAF_EMERGENCY_MODEL",
+}
+VALID_ROLES = frozenset(ROLE_ENV_VARS)
+
+
+def role_model(role: str) -> str | None:
+    """Operator-configured model slug for *role* (e.g. "claude-haiku-4-5",
+    or "moonshotai/kimi-k2" via OpenRouter), or None if that role's env var
+    is unset — caller should keep the provider's own default model."""
+    env_name = ROLE_ENV_VARS.get(role)
+    if not env_name:
+        return None
+    return os.environ.get(env_name, "").strip() or None
+
+
+def role_reasoning_effort(role: str) -> str | None:
+    """Reasoning-effort override for *role*. Only 'emergency' has one today
+    (CLAF_EMERGENCY_REASONING_EFFORT) — e.g. run the emergency model at
+    'high' effort instead of swapping to a pricier model family. Applied
+    only to openai_compat peers by the caller — anthropic_direct_chat
+    already strips the 'thinking' field on purpose (unsupported-model 400s
+    cascade all the way to a 2-3min/turn local fallback); not worth risking
+    that for this."""
+    if role == "emergency":
+        return os.environ.get("CLAF_EMERGENCY_REASONING_EFFORT", "").strip() or None
+    return None
+
+
+def resolve_role(body: dict) -> str:
+    """Which of the four roles should handle this cloud-routed request.
+
+    Priority:
+      1. metadata.role — explicit, operator- or hook-set. The direct lever
+         ("I literally select the best model," or an AI/hook selects it on
+         the operator's behalf).
+      2. metadata.emergency (pre-existing _select_mode trigger) → emergency.
+      3. Default: overseer (today's behavior — every other flash/cloud
+         escalation reason maps here, unchanged).
+    """
+    meta = body.get("metadata") or {}
+    explicit = str(meta.get("role") or "").strip().lower()
+    if explicit in VALID_ROLES:
+        return explicit
+    if meta.get("emergency") is True:
+        return "emergency"
+    return "overseer"
+
+
 def _cloud_peers() -> list[Provider]:
     """Flat cloud pool. All peers; no provider hardcoded as preferred.
     Tier numbers are a configurable ordering hint, not a quality ranking."""
