@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import time
 import urllib.error
@@ -180,7 +181,7 @@ def _exec_shell(cmd: str) -> dict:
             "error": "Command matched dangerous pattern — blocked.",
         }
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=30)
         out = (result.stdout or "").strip()
         err = (result.stderr or "").strip()
         return {

@@ -206,12 +206,13 @@ class Sandbox:
                 p = self._path(tok)
                 if not self._is_inside(p):
                     return self._error(f"path outside sandbox: {tok}", is_error=True)
+        import shlex
         import subprocess
 
         try:
             proc = subprocess.run(
-                cmd,
-                shell=True,
+                shlex.split(cmd),
+                shell=False,
                 cwd=self.root,
                 capture_output=True,
                 text=True,

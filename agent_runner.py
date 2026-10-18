@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sqlite3
+import shlex
 import subprocess
 import sys
 import threading
@@ -336,7 +337,7 @@ def _exec_tool(name: str, args: dict) -> str:
                 return "bash: command required"
             if _is_dangerous(cmd):
                 return "bash: blocked dangerous command"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=30)
             out = (result.stdout or "").strip()
             err = (result.stderr or "").strip()
             rep = out if out else err if err else f"(exit {result.returncode})"

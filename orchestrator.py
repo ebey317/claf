@@ -461,7 +461,7 @@ def _conv_fingerprint(msgs: list[dict]) -> str:
             text = c if isinstance(c, str) else json.dumps(c)
             import hashlib
 
-            return hashlib.sha1(text[:256].encode("utf-8")).hexdigest()[:10]
+            return hashlib.sha1(text[:256].encode("utf-8"), usedforsecurity=False).hexdigest()[:10]
     return "0000000000"
 
 

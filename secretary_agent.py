@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sqlite3
+import shlex
 import subprocess
 import sys
 import threading
@@ -401,7 +402,7 @@ def _exec_tool(name: str, args: dict, session: str) -> str:
             cmd = str(args.get("command", "")).strip()
             if not cmd:
                 return "bash: command required"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=30)
             out = (result.stdout or "").strip()
             err = (result.stderr or "").strip()
             rep = out if out else err if err else f"(exit {result.returncode})"
@@ -568,7 +569,7 @@ Rules:
 
 def _loop_hash(step_history: list, last_n: int = 3) -> str:
     recent = step_history[-last_n:]
-    return hashlib.md5(json.dumps([s.get("directive") for s in recent]).encode()).hexdigest()
+    return hashlib.md5(json.dumps([s.get("directive") for s in recent]).encode(), usedforsecurity=False).hexdigest()
 
 
 # ─── Secretary autonomous loop ────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import urllib.request
@@ -161,8 +162,8 @@ def _run_shell(cmd: str, timeout: int = 120) -> dict:
     _log("shell_start", command=cmd)
     try:
         result = subprocess.run(
-            cmd,
-            shell=True,
+            shlex.split(cmd),
+            shell=False,
             capture_output=True,
             text=True,
             timeout=timeout,
